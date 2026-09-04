@@ -48,10 +48,17 @@
       userMatch: ['user-query'],
       assistantMatch: ['model-response'],
       contentSelectors: [
+        '.query-text',
         '.markdown.markdown-main-panel',
         '.markdown',
         'message-content',
-        '.query-text',
+        '[class*="response-container"]'
+      ],
+      userContentSelectors: ['.query-text', '[class*="query-text"]'],
+      assistantContentSelectors: [
+        '.markdown.markdown-main-panel',
+        '.markdown',
+        'message-content',
         '[class*="response-container"]'
       ],
       titleSelectors: ['.conversation-title', '[class*="conversation"] [class*="title"]', 'title']
@@ -78,34 +85,97 @@
       id: 'genspark',
       name: 'Genspark',
       hosts: ['www.genspark.ai', 'genspark.ai'],
-      // GensparkのDOMは変更が多いため複数候補セレクタで広く拾う
+      // GensparkのDOM: チャット・Copilot・Sparkpage検索に対応
       itemSelectors: [
+        '[data-role="user"]',
+        '[data-role="assistant"]',
+        '[data-message-role="user"]',
+        '[data-message-role="assistant"]',
+        '[data-author="user"]',
+        '[data-author="assistant"]',
+        '[class*="user-query"]',
+        '[class*="query-item"]',
+        '[class*="query-box"]',
+        '[class*="user-message"]',
+        '[class*="assistant-message"]',
         '[class*="message-item"]',
         '[class*="chat-message"]',
         '[class*="conversation-item"]',
         '[class*="dialog-item"]',
         'div[class*="message_"]',
-        '[class*="message-row"]'
+        '[class*="message-row"]',
+        '[class*="chat-item"]',
+        '[class*="chat-turn"]',
+        '[class*="turn-item"]',
+        '[class*="bubble-user"]',
+        '[class*="bubble-assistant"]'
       ],
       userMatch: [
+        '[data-role="user"]',
+        '[data-message-role="user"]',
+        '[data-author="user"]',
         '[class*="user-message"]',
         '[class*="message-user"]',
         '[class*="human-message"]',
         '[class*="from-user"]',
-        '[class*="is-user"]'
+        '[class*="is-user"]',
+        '[class*="user-query"]',
+        '[class*="userQuery"]',
+        '[class*="query-text"]',
+        '[class*="query-content"]',
+        '[class*="query-item"]',
+        '[class*="query-box"]',
+        '[class*="user-prompt"]',
+        '[class*="prompt-user"]',
+        '[class*="chat-query"]',
+        '[class*="bubble-user"]',
+        '[class*="self"]',
+        '[class*="mine"]'
       ],
       assistantMatch: [
+        '[data-role="assistant"]',
+        '[data-message-role="assistant"]',
+        '[data-author="assistant"]',
         '[class*="assistant-message"]',
         '[class*="message-assistant"]',
         '[class*="ai-message"]',
         '[class*="bot-message"]',
         '[class*="agent-message"]',
         '[class*="from-ai"]',
-        '[class*="is-ai"]'
+        '[class*="is-ai"]',
+        '[class*="assistant_message"]',
+        '[class*="assistantMessage"]',
+        '[class*="agent_message"]',
+        '[class*="agentMessage"]',
+        '[class*="model-response"]',
+        '[class*="ai-response"]',
+        '[class*="agent-response"]',
+        '[class*="copilot-response"]',
+        '[class*="bubble-assistant"]',
+        '[class*="answer-box"]',
+        '[class*="answer-content"]'
+      ],
+      userContentSelectors: [
+        '[class*="query-text"]',
+        '[class*="query-content"]',
+        '[class*="prompt-text"]',
+        '[class*="user-content"]',
+        '[class*="bubble"]',
+        'p'
+      ],
+      assistantContentSelectors: [
+        '.markdown-body',
+        '[class*="markdown"]',
+        '[class*="prose"]',
+        '[class*="message-content"]',
+        '[class*="content-body"]',
+        '[class*="answer-content"]',
+        '[class*="msg-content"]'
       ],
       contentSelectors: [
         '.markdown-body',
         '[class*="markdown"]',
+        '[class*="prose"]',
         '[class*="message-content"]',
         '[class*="content-body"]',
         '[class*="msg-content"]'
@@ -114,6 +184,8 @@
         '[class*="chat-title"]',
         '[class*="conversation-title"]',
         '[class*="session-title"]',
+        '[class*="spark-title"]',
+        'h1',
         'title'
       ]
     },
@@ -235,7 +307,25 @@
     '[data-testid*="action-bar"]',
     '[aria-label*="Copy"]',
     '[aria-label*="copy"]',
-    '[aria-label*="コピー"]'
+    '[aria-label*="コピー"]',
+    // スクリーンリーダー専用要素やプロンプトラベル・応答ヘッダーの除去
+    '.visually-hidden',
+    '[class*="visually-hidden"]',
+    '.cdk-visually-hidden',
+    '[class*="cdk-visually-hidden"]',
+    '.sr-only',
+    '[class*="sr-only"]',
+    '[class*="query-header"]',
+    '[class*="prompt-header"]',
+    '[class*="response-header"]',
+    '.query-title',
+    '[class*="query-title"]',
+    // Genspark等の検索プロセス・ステータス表示の除去
+    '[class*="copilot-action"]',
+    '[class*="source-card"]',
+    '[class*="search-process"]',
+    '[class*="agent-status"]',
+    '[class*="spark-action"]'
   ];
 
   function sanitizeClone(root) {
@@ -243,6 +333,16 @@
     for (const sel of REMOVE_SELECTORS) {
       clone.querySelectorAll(sel).forEach((n) => n.remove());
     }
+
+    // 「あなたのプロンプト」「Your prompt」「Gemini の回答」等のヘッダー・ラベルを除去
+    const headers = clone.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="header"], [class*="title"], [class*="label"]');
+    for (const h of headers) {
+      const txt = h.textContent.trim();
+      if (/^(あなたのプロンプト|Your prompt|Gemini の回答|Gemini's response)/i.test(txt)) {
+        h.remove();
+      }
+    }
+
     // インラインstyleはチャット画面の配色(ダーク等)を持ち込むため除去するが、
     // KaTeX(.katex)・MathJax(mjx-*)数式の内部は vertical-align / top / height 等の
     // インラインstyleで添字・指数・分数の縦位置を調整しているため「保持」する。
@@ -269,9 +369,48 @@
   // ---------------------------------------------------------------
   // メッセージ抽出
   // ---------------------------------------------------------------
+  function escapeText(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function findContentNode(item, cfg, role) {
-    // Geminiのuser-queryなど本文=コンテナ自身のケースを考慮
-    for (const sel of cfg.contentSelectors) {
+    // ユーザー発言の場合、ユーザー専用セレクタを優先し、AIのmarkdownブロックを誤認しないようにする
+    if (role === 'user') {
+      const userSelectors = cfg.userContentSelectors || [
+        '[class*="query-text"]',
+        '[class*="query-content"]',
+        '[class*="prompt-text"]',
+        '[class*="user-text"]',
+        '[class*="query"]',
+        '[class*="prompt"]',
+        '[class*="user-content"]',
+        '[class*="bubble"]',
+        'p'
+      ];
+      for (const sel of userSelectors) {
+        try {
+          if (item.matches(sel)) return item;
+          const found = item.querySelector(sel);
+          if (found && found.textContent.trim().length > 0) {
+            // AIのmarkdown本文を含む要素はユーザー本文として誤認しないよう除外
+            const hasAiContent = !!found.querySelector('.markdown-body, [class*="markdown"], [class*="prose"]');
+            if (!hasAiContent) return found;
+          }
+        } catch (_) { continue; }
+      }
+      return item;
+    }
+
+    const selectors = (role === 'assistant' && cfg.assistantContentSelectors)
+      ? cfg.assistantContentSelectors
+      : cfg.contentSelectors;
+
+    for (const sel of selectors) {
       try {
         if (item.matches(sel)) return item;
         const found = item.querySelector(sel);
@@ -288,10 +427,6 @@
 
     const results = [];
     for (const item of items) {
-      // ユーザー/AIともに「要素自身」または「子孫」でrole判定する。
-      // (以前はAI側が要素自身のみだったため、ChatGPTのように
-      //  article内に data-message-author-role を持つ構造で
-      //  AIメッセージが誤判定・脱落していた)
       const isUser = matchAny(item, cfg.userMatch) ||
         !!item.querySelector(cfg.userMatch.join(','));
       const isAssistant = matchAny(item, cfg.assistantMatch) ||
@@ -303,9 +438,28 @@
       } else if (isAssistant && !isUser) {
         role = 'assistant';
       } else if (isUser && isAssistant) {
-        // 両方にマッチ(ターンコンテナ等)する場合は最も近いマーカーで決める
+        // ターンコンテナ内にユーザー発言とAI回答の両方が含まれている場合
         const userEl = matchAny(item, cfg.userMatch) ? item : item.querySelector(cfg.userMatch.join(','));
-        role = userEl ? 'user' : 'assistant';
+        const asstEl = matchAny(item, cfg.assistantMatch) ? item : item.querySelector(cfg.assistantMatch.join(','));
+        if (userEl && asstEl && userEl !== asstEl) {
+          const subItems = [userEl, asstEl].sort((a, b) => {
+            return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
+          });
+          for (const sub of subItems) {
+            const subRole = sub === userEl ? 'user' : 'assistant';
+            const contentNode = findContentNode(sub, cfg, subRole);
+            const text = contentNode.textContent.trim();
+            if (!text && !contentNode.querySelector('img')) continue;
+            const clone = sanitizeClone(contentNode);
+            results.push({
+              key: hashKey(subRole + '|' + text.slice(0, 300)),
+              role: subRole,
+              html: clone.innerHTML
+            });
+          }
+          continue;
+        }
+        role = userEl && !matchAny(userEl, cfg.assistantMatch) ? 'user' : 'assistant';
       }
       if (!role) {
         // 判定できない場合はスキップ(ヘッダ等の誤検出防止)
@@ -334,17 +488,29 @@
   // 汎用フォールバック(構造ベース)
   // roleセレクタが一致しないサイト向けに、
   // 「AI本文ブロックと、その直前のユーザー発言」をペアで拾う。
-  // 以前の「交互割当」方式はAI本文のみを拾うため
-  // 「あなた枠にAI内容が入り、ユーザー入力が消える」問題があった。
   // ---------------------------------------------------------------
 
-  /** el が除外対象(別のmarkdownブロック内・ボタン内等)か */
+  /** el が除外対象(別のmarkdownブロック内・ボタン内・AIメッセージ等)か */
   function isExcludedUserNode(el, cfg) {
     if (!el || el.nodeType !== 1) return true;
-    // 別のcontentブロック内部はユーザー発言ではない
-    try {
-      if (el.matches(cfg.contentSelectors.join(','))) return true;
-    } catch (_) { /* noop */ }
+    // 別のcontentブロック自身、またはcontentブロックを内包する要素はユーザー発言ではない
+    const contentSels = (cfg.assistantContentSelectors || cfg.contentSelectors || []).join(',');
+    if (contentSels) {
+      try {
+        if (el.matches(contentSels) || el.querySelector(contentSels)) return true;
+      } catch (_) { /* noop */ }
+    }
+    // AI/アシスタントにマッチする要素またはその子孫はユーザー発言ではない
+    if (cfg.assistantMatch && cfg.assistantMatch.length) {
+      const asstSel = cfg.assistantMatch.join(',');
+      try {
+        if (el.matches(asstSel) || el.closest(asstSel) || el.querySelector(asstSel)) return true;
+      } catch (_) { /* noop */ }
+    }
+    // 一般的なAI・ボット・エージェント要素、ツールコール、検索ステップ等を除外
+    if (el.closest('[class*="assistant"], [class*="agent"], [class*="ai-"], [class*="bot-"], [class*="model-"], [class*="search-result"], [class*="source-card"], [class*="thinking"], [class*="reasoning"], [class*="copilot"], [class*="genspark"]')) {
+      return true;
+    }
     if (el.closest('button, [role="button"], nav, header, footer, form, textarea, input')) return true;
     // 空 or 極端に短い/長いものは除外
     const t = el.textContent.trim();
@@ -353,13 +519,31 @@
     return false;
   }
 
-  /** elの直前にある「ユーザー発言らしき」要素を探す */
+  /** assistantElの直前にある「ユーザー発言」要素を探す */
   function findUserCandidate(assistantEl, cfg) {
-    // 1) フラット型: 同じ親内の直前の兄弟を順に遡る
-    let node = assistantEl.previousElementSibling;
+    // 1) assistantElの最上位アシスタントコンテナを特定
+    let asstTop = assistantEl;
+    let curr = assistantEl;
+    while (curr && curr !== document.body) {
+      if (matchAny(curr, cfg.assistantMatch || []) ||
+          curr.matches('[class*="assistant"], [class*="agent"], [class*="model-response"], [class*="ai-message"]')) {
+        asstTop = curr;
+      }
+      curr = curr.parentElement;
+    }
+
+    // 2) フラット型: アシスタントコンテナの直前の兄弟を遡る
+    let node = asstTop.previousElementSibling;
     let hops = 0;
-    const MAX_HOPS = 5;
+    const MAX_HOPS = 10;
     while (node && hops < MAX_HOPS) {
+      // ユーザーマーカーを持つ要素を優先
+      if (cfg.userMatch && cfg.userMatch.length) {
+        const userMarker = matchAny(node, cfg.userMatch) ? node : node.querySelector(cfg.userMatch.join(','));
+        if (userMarker && !isExcludedUserNode(userMarker, cfg)) {
+          return userMarker;
+        }
+      }
       if (!isExcludedUserNode(node, cfg)) {
         return node;
       }
@@ -367,22 +551,28 @@
       hops++;
     }
 
-    // 2) ターン型: 親コンテナを遡り、「前のターンコンテナ」をユーザー候補とする。
-    //    (ユーザー発言とAI回答が別々のターン要素に入る構造向け)
-    let container = assistantEl.parentElement;
+    // 3) ターン型: 親コンテナを遡り、「前のターンコンテナ」を探す
+    let container = asstTop.parentElement;
     let depth = 0;
-    while (container && container !== document.body && depth < 4) {
-      const prevTurn = container.previousElementSibling;
-      if (prevTurn) {
-        // 前のターン自体がAI本文(markdown)を含む場合はユーザー発言ではない
+    while (container && container !== document.body && depth < 5) {
+      let prevTurn = container.previousElementSibling;
+      let turnHops = 0;
+      while (prevTurn && turnHops < 5) {
+        if (cfg.userMatch && cfg.userMatch.length) {
+          const userMarker = matchAny(prevTurn, cfg.userMatch) ? prevTurn : prevTurn.querySelector(cfg.userMatch.join(','));
+          if (userMarker && !isExcludedUserNode(userMarker, cfg)) {
+            return userMarker;
+          }
+        }
         let containsMarkdown = false;
         try {
-          containsMarkdown = !!prevTurn.querySelector(cfg.contentSelectors.join(','));
+          containsMarkdown = !!prevTurn.querySelector((cfg.assistantContentSelectors || cfg.contentSelectors).join(','));
         } catch (_) { /* noop */ }
         if (!containsMarkdown && !isExcludedUserNode(prevTurn, cfg)) {
           return prevTurn;
         }
-        return null; // 前のターンはあるがAI回答側 → ユーザー発言なしと判断
+        prevTurn = prevTurn.previousElementSibling;
+        turnHops++;
       }
       container = container.parentElement;
       depth++;
@@ -396,8 +586,8 @@
    *  B) ターン型:  [turn(user), turn(assistant)] や各ターン内に user/assistant が入る
    */
   function genericFallbackExtract(cfg) {
-    // AI本文ブロック(=markdown系)をDOM順に拾う
-    let aiBlocks = queryAllAny(document, cfg.contentSelectors);
+    const selectors = cfg.assistantContentSelectors || cfg.contentSelectors;
+    let aiBlocks = queryAllAny(document, selectors);
     aiBlocks = filterOutermost(aiBlocks).filter((el) => {
       const t = el.textContent.trim();
       return t.length > 0 || el.querySelector('img');
@@ -408,14 +598,13 @@
     let lastUserKey = null;
 
     for (const aiEl of aiBlocks) {
-      // AIブロックの直前にユーザー発言があるか
       const userEl = findUserCandidate(aiEl, cfg);
       if (userEl) {
-        const userClone = sanitizeClone(userEl);
-        const userText = userEl.textContent.trim();
+        const userNode = findContentNode(userEl, cfg, 'user');
+        const userText = userNode.textContent.trim();
         const uKey = hashKey('user|' + userText.slice(0, 300));
-        // 同じユーザー発言の重複挿入を防ぐ
-        if (uKey !== lastUserKey) {
+        if (uKey !== lastUserKey && userText.length > 0) {
+          const userClone = sanitizeClone(userNode);
           results.push({ key: uKey, role: 'user', html: userClone.innerHTML });
           lastUserKey = uKey;
         }
@@ -429,9 +618,31 @@
       });
     }
 
-    // ユーザー発言が1つも拾えなかった場合は、
-    // 交互推定より「AIのみ」の方が誤情報が少ないためそのまま返す
     return results;
+  }
+
+  function findInitialPageQuery() {
+    const candidates = [
+      'input[name="q"]',
+      'textarea[name="q"]',
+      '[class*="search-input"] input',
+      '[class*="spark-title"]',
+      'h1[class*="query"]',
+      'h1[class*="title"]',
+      '[class*="user-query"]',
+      '[class*="query-text"]'
+    ];
+    for (const sel of candidates) {
+      try {
+        const el = document.querySelector(sel);
+        if (!el) continue;
+        const text = (el.value || el.textContent || '').trim();
+        if (text && text.length > 1 && text.length < 500 && !/^(Genspark|AI Chat|ChatGPT|Gemini|Claude|Kimi)$/i.test(text)) {
+          return text;
+        }
+      } catch (_) { continue; }
+    }
+    return null;
   }
 
   /**
@@ -499,6 +710,18 @@
       if (generic.length > 0) {
         ordered.length = 0;
         for (const m of generic) ordered.push(m);
+      }
+    }
+
+    // ユーザー発言が1件もない場合（Gensparkの検索・Sparkpage画面等でプロンプトがヘッダーや検索バーにある場合）
+    if (ordered.length > 0 && !ordered.some((m) => m.role === 'user')) {
+      const initialQuery = findInitialPageQuery();
+      if (initialQuery) {
+        ordered.unshift({
+          key: hashKey('user|' + initialQuery.slice(0, 300)),
+          role: 'user',
+          html: `<p>${escapeText(initialQuery)}</p>`
+        });
       }
     }
 

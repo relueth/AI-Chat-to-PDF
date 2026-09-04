@@ -94,8 +94,15 @@
     tpl.innerHTML = html;
 
     tpl.content.querySelectorAll(
-      'script, iframe, object, embed, form, link, meta, style'
+      'script, iframe, object, embed, form, link, meta, style, .visually-hidden, [class*="visually-hidden"], .cdk-visually-hidden, [class*="cdk-visually-hidden"], .sr-only, [class*="sr-only"], [class*="query-header"]'
     ).forEach((n) => n.remove());
+
+    // 重複した「あなたのプロンプト」や「Gemini の回答」等のヘッダーを除去
+    tpl.content.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="header"], [class*="title"], [class*="label"]').forEach((el) => {
+      if (/^(あなたのプロンプト|Your prompt|Gemini の回答|Gemini's response)/i.test(el.textContent.trim())) {
+        el.remove();
+      }
+    });
 
     const all = tpl.content.querySelectorAll('*');
     for (const el of all) {
@@ -157,6 +164,16 @@
       const body = document.createElement('div');
       body.className = 'msg-body';
       body.innerHTML = sanitizeHtml(m.html || '');
+
+      // ユーザー発言の冒頭に「あなたのプロンプト」ラベルが残っている場合の除去
+      if (m.role === 'user') {
+        const potentialHeaders = body.querySelectorAll('p, div, span, h1, h2, h3');
+        for (const ph of potentialHeaders) {
+          if (/^あなたのプロンプト\s*/.test(ph.textContent.trim()) || /^Your prompt\s*/i.test(ph.textContent.trim())) {
+            ph.remove();
+          }
+        }
+      }
 
       wrap.appendChild(role);
       wrap.appendChild(body);

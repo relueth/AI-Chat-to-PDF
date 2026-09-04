@@ -1,0 +1,6 @@
+{
+  "name": "AI Chat to PDF",
+  "description": "Convert AI chat conversations (Kimi, Gemini, Claude, Genspark, ChatGPT) to PDF, HTML, or Markdown text while preserving KaTeX math formatting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
