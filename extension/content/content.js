@@ -85,7 +85,7 @@
       id: 'genspark',
       name: 'Genspark',
       hosts: ['www.genspark.ai', 'genspark.ai'],
-      // GensparkのDOM: チャット・Copilot・Sparkpage検索に対応
+      // GensparkのDOM: チャット・Copilot・Agent・Sparkpage検索に対応
       itemSelectors: [
         '[data-role="user"]',
         '[data-role="assistant"]',
@@ -93,13 +93,20 @@
         '[data-message-role="assistant"]',
         '[data-author="user"]',
         '[data-author="assistant"]',
+        '[data-testid*="user"]',
+        '[data-testid*="assistant"]',
+        '[data-testid*="bot"]',
         '[class*="user-query"]',
         '[class*="query-item"]',
         '[class*="query-box"]',
         '[class*="user-message"]',
+        '[class*="message-user"]',
+        '[class*="user-prompt"]',
+        '[class*="prompt-user"]',
         '[class*="assistant-message"]',
-        '[class*="message-item"]',
+        '[class*="message-assistant"]',
         '[class*="chat-message"]',
+        '[class*="message-item"]',
         '[class*="conversation-item"]',
         '[class*="dialog-item"]',
         'div[class*="message_"]',
@@ -108,12 +115,16 @@
         '[class*="chat-turn"]',
         '[class*="turn-item"]',
         '[class*="bubble-user"]',
-        '[class*="bubble-assistant"]'
+        '[class*="bubble-assistant"]',
+        '[class*="justify-end"]',
+        '[class*="items-end"]',
+        '[class*="self-end"]'
       ],
       userMatch: [
         '[data-role="user"]',
         '[data-message-role="user"]',
         '[data-author="user"]',
+        '[data-testid*="user"]',
         '[class*="user-message"]',
         '[class*="message-user"]',
         '[class*="human-message"]',
@@ -129,31 +140,33 @@
         '[class*="prompt-user"]',
         '[class*="chat-query"]',
         '[class*="bubble-user"]',
-        '[class*="self"]',
-        '[class*="mine"]'
+        '[class*="justify-end"]',
+        '[class*="items-end"]',
+        '[class*="self-end"]',
+        '[class*="ml-auto"]'
       ],
       assistantMatch: [
         '[data-role="assistant"]',
         '[data-message-role="assistant"]',
         '[data-author="assistant"]',
+        '[data-testid*="assistant"]',
+        '[data-testid*="bot"]',
         '[class*="assistant-message"]',
+        '[class*="assistantMessage"]',
         '[class*="message-assistant"]',
         '[class*="ai-message"]',
         '[class*="bot-message"]',
-        '[class*="agent-message"]',
         '[class*="from-ai"]',
         '[class*="is-ai"]',
-        '[class*="assistant_message"]',
-        '[class*="assistantMessage"]',
-        '[class*="agent_message"]',
-        '[class*="agentMessage"]',
         '[class*="model-response"]',
         '[class*="ai-response"]',
-        '[class*="agent-response"]',
         '[class*="copilot-response"]',
         '[class*="bubble-assistant"]',
         '[class*="answer-box"]',
-        '[class*="answer-content"]'
+        '[class*="answer-content"]',
+        '.markdown-body',
+        '[class*="markdown"]',
+        '[class*="prose"]'
       ],
       userContentSelectors: [
         '[class*="query-text"]',
@@ -161,7 +174,9 @@
         '[class*="prompt-text"]',
         '[class*="user-content"]',
         '[class*="bubble"]',
-        'p'
+        '[class*="rounded"]',
+        'p',
+        'span'
       ],
       assistantContentSelectors: [
         '.markdown-body',
@@ -490,93 +505,160 @@
   // 「AI本文ブロックと、その直前のユーザー発言」をペアで拾う。
   // ---------------------------------------------------------------
 
-  /** el が除外対象(別のmarkdownブロック内・ボタン内・AIメッセージ等)か */
-  function isExcludedUserNode(el, cfg) {
+  /** el がユーザー発言として無効(ボタン・入力欄・ヘッダー・AI回答自身など)かを判定 */
+  function isInvalidUserNode(el, assistantEl, cfg, pageTitle) {
     if (!el || el.nodeType !== 1) return true;
-    // 別のcontentブロック自身、またはcontentブロックを内包する要素はユーザー発言ではない
-    const contentSels = (cfg.assistantContentSelectors || cfg.contentSelectors || []).join(',');
-    if (contentSels) {
-      try {
-        if (el.matches(contentSels) || el.querySelector(contentSels)) return true;
-      } catch (_) { /* noop */ }
-    }
-    // AI/アシスタントにマッチする要素またはその子孫はユーザー発言ではない
-    if (cfg.assistantMatch && cfg.assistantMatch.length) {
-      const asstSel = cfg.assistantMatch.join(',');
-      try {
-        if (el.matches(asstSel) || el.closest(asstSel) || el.querySelector(asstSel)) return true;
-      } catch (_) { /* noop */ }
-    }
-    // 一般的なAI・ボット・エージェント要素、ツールコール、検索ステップ等を除外
-    if (el.closest('[class*="assistant"], [class*="agent"], [class*="ai-"], [class*="bot-"], [class*="model-"], [class*="search-result"], [class*="source-card"], [class*="thinking"], [class*="reasoning"], [class*="copilot"], [class*="genspark"]')) {
+
+    // assistantEl自身、または包含関係
+    if (assistantEl && (el === assistantEl || el.contains(assistantEl) || assistantEl.contains(el))) {
       return true;
     }
-    if (el.closest('button, [role="button"], nav, header, footer, form, textarea, input')) return true;
-    // 空 or 極端に短い/長いものは除外
+
+    // ボタン、フォーム、入力欄、ナビゲーション、ヘッダー、フッター等は除外
+    if (el.closest('button, [role="button"], nav, header, footer, form, textarea, input, select, aside')) {
+      return true;
+    }
+
+    // AIのMarkdown/Prose本文を含んでいるか自身がそれ
+    const contentSels = (cfg.assistantContentSelectors || cfg.contentSelectors || [
+      '.markdown-body', '[class*="markdown"]', '[class*="prose"]'
+    ]).join(',');
+    try {
+      if (el.matches(contentSels) || el.querySelector(contentSels)) return true;
+    } catch (_) { /* noop */ }
+
+    // AIのアクションボタン群(コピー・評価など)を含んでいる場合は除外
+    try {
+      if (el.querySelector('[class*="copy"], [aria-label*="copy" i], [aria-label*="コピー"], [class*="thumb"], [class*="actions"]')) {
+        return true;
+      }
+    } catch (_) { /* noop */ }
+
+    // 明確なAIメッセージ要素
+    const asstSels = '[data-role="assistant"], [data-message-role="assistant"], [data-author="assistant"], [class*="assistant-message"], [class*="ai-message"], [class*="bot-message"], [class*="model-response"]';
+    try {
+      if (el.matches(asstSels) || el.querySelector(asstSels)) return true;
+    } catch (_) { /* noop */ }
+
+    // 思考プロセス・ツール呼び出し・検索ソース
+    const toolSels = '[class*="thinking"], [class*="reasoning"], [class*="source-card"], [class*="search-result"], [class*="copilot-step"]';
+    try {
+      if (el.matches(toolSels)) return true;
+    } catch (_) { /* noop */ }
+
+    // タイムスタンプのみの要素を除外
     const t = el.textContent.trim();
     if (t.length === 0 && !el.querySelector('img')) return true;
-    if (t.length > 3000) return true; // ユーザーの1発言としては長すぎる
+    if (t.length > 5000) return true;
+    if (/^(\d{1,2}:\d{2}(\s*(AM|PM))?|\d+ (mins?|hours?|days?) ago)$/i.test(t)) return true;
+
+    // ページタイトルと完全一致する場合は除外
+    if (pageTitle && (t === pageTitle || t.startsWith(pageTitle + '\n'))) return true;
+
     return false;
   }
 
-  /** assistantElの直前にある「ユーザー発言」要素を探す */
-  function findUserCandidate(assistantEl, cfg) {
-    // 1) assistantElの最上位アシスタントコンテナを特定
-    let asstTop = assistantEl;
-    let curr = assistantEl;
-    while (curr && curr !== document.body) {
-      if (matchAny(curr, cfg.assistantMatch || []) ||
-          curr.matches('[class*="assistant"], [class*="agent"], [class*="model-response"], [class*="ai-message"]')) {
-        asstTop = curr;
-      }
-      curr = curr.parentElement;
-    }
+  function resolveUserCandidateNode(el, assistantEl, cfg, pageTitle) {
+    if (!el || el.nodeType !== 1) return null;
+    if (isInvalidUserNode(el, assistantEl, cfg, pageTitle)) return null;
 
-    // 2) フラット型: アシスタントコンテナの直前の兄弟を遡る
-    let node = asstTop.previousElementSibling;
-    let hops = 0;
-    const MAX_HOPS = 10;
-    while (node && hops < MAX_HOPS) {
-      // ユーザーマーカーを持つ要素を優先
-      if (cfg.userMatch && cfg.userMatch.length) {
-        const userMarker = matchAny(node, cfg.userMatch) ? node : node.querySelector(cfg.userMatch.join(','));
-        if (userMarker && !isExcludedUserNode(userMarker, cfg)) {
-          return userMarker;
+    // 内部に明確なユーザー要素がある場合はそれを採用
+    const userMatchSels = [
+      '[data-role="user"]',
+      '[data-message-role="user"]',
+      '[data-author="user"]',
+      '[data-testid*="user"]',
+      '[class*="user-query"]',
+      '[class*="query-text"]',
+      '[class*="query-content"]',
+      '[class*="user-message"]',
+      '[class*="user-prompt"]',
+      '[class*="bubble-user"]',
+      '[class*="bubble"]',
+      '[class*="justify-end"] > *',
+      '[class*="items-end"] > *',
+      '[class*="self-end"]'
+    ];
+    for (const sel of userMatchSels) {
+      try {
+        if (el.matches(sel) && !isInvalidUserNode(el, assistantEl, cfg, pageTitle)) {
+          return el;
         }
-      }
-      if (!isExcludedUserNode(node, cfg)) {
-        return node;
-      }
-      node = node.previousElementSibling;
-      hops++;
+        const inner = el.querySelector(sel);
+        if (inner && !isInvalidUserNode(inner, assistantEl, cfg, pageTitle)) {
+          return inner;
+        }
+      } catch (_) { /* noop */ }
     }
 
-    // 3) ターン型: 親コンテナを遡り、「前のターンコンテナ」を探す
-    let container = asstTop.parentElement;
+    // 内部にテキストがあり、無効判定されなければ掘り下げて返す
+    const text = el.textContent.trim();
+    if (text.length > 0) {
+      let target = el;
+      while (target.children.length === 1 && target.firstElementChild && !isInvalidUserNode(target.firstElementChild, assistantEl, cfg, pageTitle)) {
+        target = target.firstElementChild;
+      }
+      return target;
+    }
+    return null;
+  }
+
+  /** assistantElの直前にある「ユーザー発言」要素を探す */
+  function findUserCandidate(assistantEl, cfg, pageTitle) {
+    if (!assistantEl) return null;
+
+    let curr = assistantEl;
     let depth = 0;
-    while (container && container !== document.body && depth < 5) {
-      let prevTurn = container.previousElementSibling;
-      let turnHops = 0;
-      while (prevTurn && turnHops < 5) {
-        if (cfg.userMatch && cfg.userMatch.length) {
-          const userMarker = matchAny(prevTurn, cfg.userMatch) ? prevTurn : prevTurn.querySelector(cfg.userMatch.join(','));
-          if (userMarker && !isExcludedUserNode(userMarker, cfg)) {
-            return userMarker;
+    while (curr && curr !== document.body && curr !== document.documentElement && depth < 6) {
+      // 1) 直前の兄弟要素を遡る (フラット型レイアウト)
+      let prev = curr.previousElementSibling;
+      let hops = 0;
+      while (prev && hops < 10) {
+        const userNode = resolveUserCandidateNode(prev, assistantEl, cfg, pageTitle);
+        if (userNode) {
+          return userNode;
+        }
+        prev = prev.previousElementSibling;
+        hops++;
+      }
+
+      // 2) ターンコンテナ型: 親コンテナ内で、assistantElより前にある子要素を探索
+      const parent = curr.parentElement;
+      if (parent && parent !== document.body && parent !== document.documentElement) {
+        const userCands = queryAllAny(parent, [
+          '[class*="justify-end"]',
+          '[class*="items-end"]',
+          '[class*="self-end"]',
+          '[class*="ml-auto"]',
+          '[class*="user"]',
+          '[class*="prompt"]',
+          '[class*="query"]',
+          '[class*="bubble"]',
+          '[data-role="user"]',
+          '[data-message-role="user"]',
+          'div', 'p'
+        ]);
+        const preceding = [];
+        for (const cand of userCands) {
+          if (cand === assistantEl || assistantEl.contains(cand) || cand.contains(assistantEl)) continue;
+          const pos = cand.compareDocumentPosition(assistantEl);
+          if (pos & Node.DOCUMENT_POSITION_FOLLOWING) {
+            const userNode = resolveUserCandidateNode(cand, assistantEl, cfg, pageTitle);
+            if (userNode) {
+              preceding.push(userNode);
+            }
           }
         }
-        let containsMarkdown = false;
-        try {
-          containsMarkdown = !!prevTurn.querySelector((cfg.assistantContentSelectors || cfg.contentSelectors).join(','));
-        } catch (_) { /* noop */ }
-        if (!containsMarkdown && !isExcludedUserNode(prevTurn, cfg)) {
-          return prevTurn;
+        if (preceding.length > 0) {
+          return preceding[preceding.length - 1];
         }
-        prevTurn = prevTurn.previousElementSibling;
-        turnHops++;
       }
-      container = container.parentElement;
+
+      if (curr.matches('main, [role="main"], article')) break;
+      curr = curr.parentElement;
       depth++;
     }
+
     return null;
   }
 
@@ -586,6 +668,7 @@
    *  B) ターン型:  [turn(user), turn(assistant)] や各ターン内に user/assistant が入る
    */
   function genericFallbackExtract(cfg) {
+    const pageTitle = getConversationTitle(cfg);
     const selectors = cfg.assistantContentSelectors || cfg.contentSelectors;
     let aiBlocks = queryAllAny(document, selectors);
     aiBlocks = filterOutermost(aiBlocks).filter((el) => {
@@ -598,7 +681,7 @@
     let lastUserKey = null;
 
     for (const aiEl of aiBlocks) {
-      const userEl = findUserCandidate(aiEl, cfg);
+      const userEl = findUserCandidate(aiEl, cfg, pageTitle);
       if (userEl) {
         const userNode = findContentNode(userEl, cfg, 'user');
         const userText = userNode.textContent.trim();
@@ -621,7 +704,28 @@
     return results;
   }
 
-  function findInitialPageQuery() {
+  function findInitialPageQuery(cfg, pageTitle) {
+    // 1) 画面上のユーザー発言バブル(右寄せ要素やbubble等)があればそれを取得
+    const bubbleCands = queryAllAny(document, [
+      '[class*="justify-end"] [class*="rounded"]',
+      '[class*="justify-end"] p',
+      '[class*="justify-end"] div',
+      '[class*="items-end"] [class*="rounded"]',
+      '[class*="bubble-user"]',
+      '[class*="user-query"]',
+      '[class*="user-message"]',
+      '[class*="user-prompt"]'
+    ]);
+    for (const el of bubbleCands) {
+      if (!isInvalidUserNode(el, null, cfg, pageTitle)) {
+        const text = el.textContent.trim();
+        if (text && text.length > 0 && text.length < 5000) {
+          return text;
+        }
+      }
+    }
+
+    // 2) 検索入力欄やヘッダーのクエリ
     const candidates = [
       'input[name="q"]',
       'textarea[name="q"]',
@@ -713,9 +817,10 @@
       }
     }
 
-    // ユーザー発言が1件もない場合（Gensparkの検索・Sparkpage画面等でプロンプトがヘッダーや検索バーにある場合）
+    // ユーザー発言が1件もない場合（Genspark等でプロンプトがヘッダーや検索バーにある場合）
     if (ordered.length > 0 && !ordered.some((m) => m.role === 'user')) {
-      const initialQuery = findInitialPageQuery();
+      const pageTitle = getConversationTitle(cfg);
+      const initialQuery = findInitialPageQuery(cfg, pageTitle);
       if (initialQuery) {
         ordered.unshift({
           key: hashKey('user|' + initialQuery.slice(0, 300)),
@@ -738,8 +843,9 @@
       } catch (_) { continue; }
     }
     const t = (document.title || '').trim();
-    // "Kimi - 〜" のようなサイト名プレフィックスを軽く除去
-    return t.replace(/\s*[-|–]\s*(Kimi|Gemini|Claude|Google Gemini)\s*$/i, '') || t || 'AI会話';
+    // "Kimi - 〜" や "〜 | Genspark" のようなサイト名プレフィックス・サフィックスを除去
+    return t.replace(/\s*[-|–]\s*(Kimi|Gemini|Claude|Google Gemini|Genspark|Genspark AI)\s*$/i, '')
+            .replace(/^(Genspark|Genspark AI)\s*[-|–]\s*/i, '') || t || 'AI会話';
   }
 
   // ---------------------------------------------------------------

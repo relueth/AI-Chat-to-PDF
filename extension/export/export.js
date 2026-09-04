@@ -169,8 +169,15 @@
       if (m.role === 'user') {
         const potentialHeaders = body.querySelectorAll('p, div, span, h1, h2, h3');
         for (const ph of potentialHeaders) {
-          if (/^あなたのプロンプト\s*/.test(ph.textContent.trim()) || /^Your prompt\s*/i.test(ph.textContent.trim())) {
+          const trimmed = ph.textContent.trim();
+          if (/^(あなたのプロンプト|Your prompt)\s*$/i.test(trimmed)) {
             ph.remove();
+          } else if (/^(あなたのプロンプト|Your prompt)\s*[:：]?\s*/i.test(trimmed)) {
+            if (body.children.length > 1) {
+              ph.remove();
+            } else {
+              ph.textContent = trimmed.replace(/^(あなたのプロンプト|Your prompt)\s*[:：]?\s*/i, '');
+            }
           }
         }
       }
