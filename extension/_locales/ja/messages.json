@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "AI Chat to PDF (Kimi / Gemini / Claude)",
+    "description": "拡張機能の名前"
+  },
+  "appDesc": {
+    "message": "Kimi / Gemini / Claude のAI会話を、数式のレイアウトを崩さずにPDFとして保存します。",
+    "description": "拡張機能の説明"
+  }
+}

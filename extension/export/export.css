@@ -1,0 +1,290 @@
+/* ============================================================
+   AI Chat to PDF - export page styles (screen + print)
+   数式(KaTeX)のレイアウトを印刷時も維持するための調整を含む
+   ============================================================ */
+
+* { box-sizing: border-box; }
+
+:root {
+  --text: #1f2430;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --user-bg: #eff6ff;
+  --user-border: #bfdbfe;
+  --assistant-bg: #ffffff;
+  --assistant-border: #e5e7eb;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+  color: var(--text);
+  background: #f3f4f6;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+/* ---------------- ツールバー (印刷時は非表示) ---------------- */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #111827;
+  color: #e5e7eb;
+  padding: 12px 20px;
+}
+.toolbar-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.toolbar-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tb-title {
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9ca3af;
+  font-size: 13px;
+}
+.tb-count { font-size: 12px; color: #6b7280; }
+.toolbar-actions { display: flex; gap: 8px; }
+.tbtn {
+  border: 1px solid #374151;
+  background: #1f2937;
+  color: #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tbtn:hover { background: #374151; }
+.tbtn-primary { background: #2563eb; border-color: #2563eb; }
+.tbtn-primary:hover { background: #1d4ed8; }
+.toolbar-hint {
+  max-width: 860px;
+  margin: 8px auto 0;
+  font-size: 11.5px;
+  color: #9ca3af;
+}
+
+/* ---------------- ドキュメント本体 ---------------- */
+.document {
+  max-width: 860px;
+  margin: 24px auto 48px;
+  background: #ffffff;
+  padding: 40px 48px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+.doc-header {
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+.doc-title { font-size: 22px; margin: 0 0 6px; }
+.doc-meta { margin: 0; color: var(--muted); font-size: 12px; }
+.doc-meta a { color: var(--muted); word-break: break-all; }
+
+.messages { display: flex; flex-direction: column; gap: 18px; }
+
+/* ---------------- メッセージバブル ---------------- */
+.msg {
+  border-radius: 10px;
+  padding: 14px 18px;
+  break-inside: avoid-page; /* メッセージの途中で改ページしない */
+}
+.msg-role {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.msg-user {
+  background: var(--user-bg);
+  border: 1px solid var(--user-border);
+}
+.msg-user .msg-role { color: #1d4ed8; }
+.msg-assistant {
+  background: var(--assistant-bg);
+  border: 1px solid var(--assistant-border);
+}
+.msg-assistant .msg-role { color: #059669; }
+
+.msg-body { overflow-wrap: break-word; }
+.msg-body > :first-child { margin-top: 0; }
+.msg-body > :last-child { margin-bottom: 0; }
+
+/* 段落・見出し */
+.msg-body p { margin: .6em 0; }
+.msg-body h1, .msg-body h2, .msg-body h3,
+.msg-body h4, .msg-body h5, .msg-body h6 {
+  margin: 1em 0 .4em;
+  line-height: 1.4;
+}
+.msg-body h1 { font-size: 1.5em; }
+.msg-body h2 { font-size: 1.3em; }
+.msg-body h3 { font-size: 1.15em; }
+
+/* リスト */
+.msg-body ul, .msg-body ol { margin: .5em 0; padding-left: 1.6em; }
+.msg-body li { margin: .25em 0; }
+
+/* 表 */
+.msg-body table {
+  border-collapse: collapse;
+  margin: .8em 0;
+  width: 100%;
+  font-size: 13px;
+  break-inside: avoid-page;
+}
+.msg-body th, .msg-body td {
+  border: 1px solid #d1d5db;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.msg-body th { background: #f3f4f6; font-weight: 600; }
+
+/* 引用 */
+.msg-body blockquote {
+  margin: .8em 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid #d1d5db;
+  color: #4b5563;
+}
+
+/* コード */
+.msg-body code {
+  font-family: "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+  font-size: .92em;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.msg-body pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
+  break-inside: avoid-page;
+  white-space: pre-wrap; /* 長い行は折り返して印刷切れを防止 */
+  word-break: break-word;
+}
+.msg-body pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+/* 画像 */
+.msg-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+/* リンク */
+.msg-body a { color: #2563eb; text-decoration: underline; }
+
+/* ============================================================
+   数式 (KaTeX) - 印刷で形を崩さないための調整
+   ============================================================ */
+.msg-body .katex {
+  font-size: 1.06em;          /* 本文より少し大きく */
+  line-height: 1.2;
+  white-space: nowrap;        /* 数式の途中改行を防止 */
+}
+.msg-body .katex-display {
+  margin: .9em 0;
+  padding: 6px 0;
+  overflow-x: auto;           /* 画面では横スクロール許容 */
+  overflow-y: hidden;
+  break-inside: avoid-page;   /* ディスプレイ数式の改ページ防止 */
+}
+.msg-body .katex-display > .katex {
+  white-space: normal;        /* 長い数式は内部で折り返し可 */
+}
+
+/* Claude等で使われる \\[ ... \\] や \\( \\) の生テキスト残存防止:
+   KaTeX未レンダリングの場合も可読性を保つ */
+.msg-body .math-fallback { font-family: "Cambria Math", serif; }
+
+/* ---------------- ローディング ---------------- */
+.loading {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: #f3f4f6;
+  color: #4b5563;
+  z-index: 200;
+}
+.loading .spinner {
+  width: 32px; height: 32px;
+  border: 3px solid #d1d5db;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.doc-footer {
+  margin-top: 32px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+/* ============================================================
+   印刷用スタイル
+   ============================================================ */
+@media print {
+  body { background: #ffffff; font-size: 12px; }
+  .toolbar, .loading { display: none !important; }
+
+  .document {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* 数式・コードブロック・表は改ページしない */
+  .katex-display, pre, table, blockquote, .msg-body img {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  /* 横長数式がページ幅を超える場合の安全策 */
+  .katex-display { overflow-x: visible; }
+  .katex-display > .katex { max-width: 100%; }
+
+  a { color: #1f2430; text-decoration: none; }
+}
+
+@page {
+  margin: 18mm 14mm;
+}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDFエクスポート - AI Chat to PDF</title>
+
+  <!-- KaTeX: 数式レイアウトをPDFでも崩さないための必須CSS/フォント -->
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+        crossorigin="anonymous">
+
+  <link rel="stylesheet" href="export.css">
+</head>
+<body>
+  <!-- 印刷時は非表示になるツールバー -->
+  <header id="toolbar" class="toolbar">
+    <div class="toolbar-inner">
+      <div class="toolbar-info">
+        <strong id="tb-site">-</strong>
+        <span id="tb-title" class="tb-title"></span>
+        <span id="tb-count" class="tb-count"></span>
+      </div>
+      <div class="toolbar-actions">
+        <button id="btn-print" class="tbtn tbtn-primary">PDFとして保存 (印刷)</button>
+        <button id="btn-dl-html" class="tbtn">HTMLを保存</button>
+        <button id="btn-dl-text" class="tbtn">テキストを保存</button>
+        <button id="btn-close" class="tbtn">タブを閉じる</button>
+      </div>
+    </div>
+    <p class="toolbar-hint" id="toolbar-hint">
+      印刷ダイアログで「送信先 → PDFに保存」を選んでください。背景グラフィックは不要、余白は「デフォルト」推奨です。
+    </p>
+  </header>
+
+  <!-- PDF化される本文 -->
+  <main id="document" class="document">
+    <div id="doc-header" class="doc-header">
+      <h1 id="doc-title" class="doc-title"></h1>
+      <p id="doc-meta" class="doc-meta"></p>
+    </div>
+    <div id="messages" class="messages"></div>
+    <footer class="doc-footer">
+      <span>Exported by AI Chat to PDF Extension</span>
+    </footer>
+  </main>
+
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <p>会話データを読み込んでいます…</p>
+  </div>
+
+  <script src="export.js"></script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Chat to PDF</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main id="popup-root">
+    <header class="popup-header">
+      <img src="../icons/icon48.png" alt="" class="popup-logo">
+      <div>
+        <h1 class="popup-title">AI Chat to PDF</h1>
+        <p class="popup-sub">Kimi / Gemini / Claude / Genspark / ChatGPT 対応</p>
+      </div>
+    </header>
+
+    <section id="status-area" class="status-area">
+      <div id="site-badge" class="site-badge">サイトを検出中…</div>
+      <p id="status-text" class="status-text"></p>
+    </section>
+
+    <section class="format-select">
+      <p class="format-label">変換形式</p>
+      <div class="format-options" role="radiogroup" aria-label="変換形式">
+        <label class="format-option">
+          <input type="radio" name="format" value="pdf" checked>
+          <span class="format-card">
+            <span class="format-name">PDF</span>
+            <span class="format-desc">印刷ダイアログで保存</span>
+          </span>
+        </label>
+        <label class="format-option">
+          <input type="radio" name="format" value="html">
+          <span class="format-card">
+            <span class="format-name">HTML</span>
+            <span class="format-desc">単一ファイルをDL</span>
+          </span>
+        </label>
+        <label class="format-option">
+          <input type="radio" name="format" value="text">
+          <span class="format-card">
+            <span class="format-name">テキスト</span>
+            <span class="format-desc">Markdown風 .txt</span>
+          </span>
+        </label>
+      </div>
+    </section>
+
+    <section class="actions">
+      <button id="btn-export" class="btn btn-primary" disabled>
+        <span class="btn-label" id="btn-label">会話をPDF化する</span>
+      </button>
+      <div id="progress" class="progress hidden">
+        <div class="spinner"></div>
+        <span id="progress-text">抽出中…</span>
+      </div>
+    </section>
+
+    <footer class="popup-footer">
+      <p class="hint" id="format-hint">数式はKaTeXの描画済みレイアウトを保持したままPDFに出力します。</p>
+    </footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
