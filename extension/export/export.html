@@ -5,11 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PDFエクスポート - AI Chat to PDF</title>
 
-  <!-- KaTeX: 数式レイアウトをPDFでも崩さないための必須CSS/フォント -->
-  <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
-        crossorigin="anonymous">
-
+  <!-- KaTeX: ローカルCSS・フォントを使用し、オフライン・制限環境でも確実に数式を描画 -->
+  <link rel="stylesheet" href="../lib/katex/katex.min.css">
   <link rel="stylesheet" href="export.css">
 </head>
 <body>
@@ -50,6 +47,9 @@
     <p>会話データを読み込んでいます…</p>
   </div>
 
+  <!-- KaTeX本体および自動数式レンダラー (ローカルバンドル) -->
+  <script src="../lib/katex/katex.min.js"></script>
+  <script src="../lib/katex/auto-render.min.js"></script>
   <script src="export.js"></script>
 </body>
 </html>

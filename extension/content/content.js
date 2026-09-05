@@ -423,13 +423,14 @@
   // ---------------------------------------------------------------
   // サニタイズ: ボタン類・ツールバーを除去しつつ数式HTMLは保持
   // ---------------------------------------------------------------
+  const MATH_CONTAINER = '.katex, .katex-display, mjx-container, [class*="mjx-"], .MathJax, [class*="math"], [class*="katex"], [class*="latex"], math';
+
   const REMOVE_SELECTORS = [
     'button',
     '[role="button"]',
     'textarea',
     'input',
     'select',
-    'svg',
     '[class*="copy-code"]',
     '[class*="copy-button"]',
     '[class*="actions-bar"]',
@@ -440,13 +441,6 @@
     '[aria-label*="Copy"]',
     '[aria-label*="copy"]',
     '[aria-label*="コピー"]',
-    // スクリーンリーダー専用要素やプロンプトラベル・応答ヘッダーの除去
-    '.visually-hidden',
-    '[class*="visually-hidden"]',
-    '.cdk-visually-hidden',
-    '[class*="cdk-visually-hidden"]',
-    '.sr-only',
-    '[class*="sr-only"]',
     '[class*="query-header"]',
     '[class*="prompt-header"]',
     '[class*="response-header"]',
@@ -466,6 +460,20 @@
       clone.querySelectorAll(sel).forEach((n) => n.remove());
     }
 
+    // アイコン等のSVGを除去するが、KaTeX/MathJax等の数式用SVG(根号、矢印、括弧等)は確実に保持する
+    clone.querySelectorAll('svg').forEach((n) => {
+      if (!n.closest(MATH_CONTAINER)) {
+        n.remove();
+      }
+    });
+
+    // スクリーンリーダー専用要素の除去(ただし数式コンテナ内は保持)
+    clone.querySelectorAll('.visually-hidden, [class*="visually-hidden"], .cdk-visually-hidden, [class*="cdk-visually-hidden"], .sr-only, [class*="sr-only"]').forEach((n) => {
+      if (!n.closest(MATH_CONTAINER)) {
+        n.remove();
+      }
+    });
+
     // 「あなたのプロンプト」「Your prompt」「Gemini の回答」等のヘッダー・ラベルを除去
     const headers = clone.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="header"], [class*="title"], [class*="label"]');
     for (const h of headers) {
@@ -479,7 +487,6 @@
     // KaTeX(.katex)・MathJax(mjx-*)数式の内部は vertical-align / top / height 等の
     // インラインstyleで添字・指数・分数の縦位置を調整しているため「保持」する。
     // これを除去すると添字・指数が下にずれて形が崩れる。
-    const MATH_CONTAINER = '.katex, .katex-display, mjx-container, [class*="mjx-"], .MathJax';
     const all = [clone, ...clone.querySelectorAll('*')];
     for (const el of all) {
       if (!el.closest(MATH_CONTAINER)) {

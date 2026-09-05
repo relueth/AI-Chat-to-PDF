@@ -87,15 +87,27 @@
   }
 
   // ---------------------------------------------------------------
+  // ---------------------------------------------------------------
   // HTMLサニタイズ
   // ---------------------------------------------------------------
+  const MATH_CONTAINER = '.katex, .katex-display, mjx-container, [class*="mjx-"], .MathJax, math, [class*="math"]';
+
   function sanitizeHtml(html) {
     const tpl = document.createElement('template');
     tpl.innerHTML = html;
 
+    // スクリプトやフォーム等の不要要素を除去 (数式コンテナは保持)
     tpl.content.querySelectorAll(
-      'script, iframe, object, embed, form, link, meta, style, .visually-hidden, [class*="visually-hidden"], .cdk-visually-hidden, [class*="cdk-visually-hidden"], .sr-only, [class*="sr-only"], [class*="query-header"]'
+      'script, iframe, object, embed, form, link, meta, style, [class*="query-header"]'
     ).forEach((n) => n.remove());
+
+    tpl.content.querySelectorAll(
+      '.visually-hidden, [class*="visually-hidden"], .cdk-visually-hidden, [class*="cdk-visually-hidden"], .sr-only, [class*="sr-only"]'
+    ).forEach((n) => {
+      if (!n.closest(MATH_CONTAINER)) {
+        n.remove();
+      }
+    });
 
     // 重複した「あなたのプロンプト」や「Gemini の回答」等のヘッダーを除去
     tpl.content.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="header"], [class*="title"], [class*="label"]').forEach((el) => {
@@ -117,6 +129,69 @@
       }
     }
     return tpl.innerHTML;
+  }
+
+  // ---------------------------------------------------------------
+  // 数式レンダリング (Kimi / Claude / Gemini / ChatGPT 等の未変換TeXをKaTeX化)
+  // ---------------------------------------------------------------
+  function renderMath(container) {
+    if (!container) return;
+
+    // 1. auto-render: テキストノード内の $...$, $$...$$, \(...\), \[...\] を数式に変換
+    if (typeof window.renderMathInElement === 'function') {
+      try {
+        window.renderMathInElement(container, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$', right: '$', display: false },
+            { left: '\\[', right: '\\]', display: true },
+            { left: '\\(', right: '\\)', display: false },
+            { left: '\\begin{equation}', right: '\\end{equation}', display: true },
+            { left: '\\begin{align}', right: '\\end{align}', display: true },
+            { left: '\\begin{alignat}', right: '\\end{alignat}', display: true },
+            { left: '\\begin{gather}', right: '\\end{gather}', display: true },
+            { left: '\\begin{CD}', right: '\\end{CD}', display: true },
+            { left: '\\begin{matrix}', right: '\\end{matrix}', display: true },
+            { left: '\\begin{pmatrix}', right: '\\end{pmatrix}', display: true },
+            { left: '\\begin{bmatrix}', right: '\\end{bmatrix}', display: true }
+          ],
+          ignoredClasses: ['katex', 'katex-display'],
+          ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'annotation'],
+          throwOnError: false
+        });
+      } catch (e) {
+        console.warn('renderMathInElement warning:', e);
+      }
+    }
+
+    // 2. Kimiや他サービスで <span class="math ..."> や <div class="math ..."> 内に
+    //    生のTeX文字列が格納されている場合の明示的レンダリング
+    if (typeof window.katex === 'object' && typeof window.katex.render === 'function') {
+      const candidates = container.querySelectorAll(
+        '.math, [class*="math-inline"], [class*="math-display"], [class*="language-math"], [class*="language-latex"], [data-tex]'
+      );
+      for (const el of candidates) {
+        if (el.querySelector('.katex') || el.classList.contains('katex')) continue;
+        const tex = el.getAttribute('data-tex') || el.textContent.trim();
+        if (!tex) continue;
+        const isDisplay = el.classList.contains('math-display') ||
+                          el.getAttribute('display') === 'true' ||
+                          el.tagName === 'DIV';
+        let clean = tex.replace(/^\$\$([\s\S]*)\$\$$/, '$1')
+                       .replace(/^\$([\s\S]*)\$$/, '$1')
+                       .replace(/^\\\[([\s\S]*)\\\]$/, '$1')
+                       .replace(/^\\\(([\s\S]*)\\\)$/, '$1')
+                       .trim();
+        try {
+          const span = document.createElement('span');
+          window.katex.render(clean, span, {
+            displayMode: isDisplay,
+            throwOnError: false
+          });
+          el.replaceWith(span);
+        } catch (_) { /* noop */ }
+      }
+    }
   }
 
   // ---------------------------------------------------------------
@@ -187,6 +262,9 @@
       frag.appendChild(wrap);
     }
     messagesEl.appendChild(frag);
+
+    // Kimi等の未レンダリングTeX文字列や数式タグをKaTeX形式に自動変換
+    renderMath(messagesEl);
   }
 
   // ---------------------------------------------------------------

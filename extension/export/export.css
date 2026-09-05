@@ -205,6 +205,11 @@ body {
 /* ============================================================
    数式 (KaTeX) - 印刷で形を崩さないための調整
    ============================================================ */
+/* Chrome 109+ の MathML 重複描画防止 (KaTeX HTML が描画されるため MathML は非表示) */
+.katex .katex-mathml {
+  display: none !important;
+}
+
 .msg-body .katex {
   font-size: 1.06em;          /* 本文より少し大きく */
   line-height: 1.2;

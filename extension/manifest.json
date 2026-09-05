@@ -64,7 +64,11 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["export/export.html"],
+      "resources": [
+        "export/export.html",
+        "lib/katex/*",
+        "lib/katex/fonts/*"
+      ],
       "matches": ["<all_urls>"]
     }
   ]
