@@ -13,32 +13,51 @@
     {
       id: 'kimi',
       name: 'Kimi',
-      hosts: ['kimi.moonshot.cn', 'www.kimi.com', 'kimi.com'],
+      hosts: ['kimi.moonshot.cn', 'kimi.com', 'www.kimi.com', 'kimi.ai', 'www.kimi.ai'],
       // メッセージ単位のコンテナ
       itemSelectors: [
         '.chat-content-item',
         '[class*="chat-content-item"]',
-        '[class*="message-item"]'
+        '[class*="message-item"]',
+        '[data-testid*="chat-item"]',
+        '[class*="segment-item"]'
       ],
       // role判定: コンテナ自体または子孫がマッチするか
       userMatch: [
         '.chat-content-item-user',
         '[class*="content-item-user"]',
-        '[class*="user-message"]'
+        '[class*="user-message"]',
+        '[class*="segment-user"]',
+        '[data-role="user"]'
       ],
       assistantMatch: [
         '.chat-content-item-assistant',
         '[class*="content-item-assistant"]',
-        '[class*="bot-message"]'
+        '[class*="bot-message"]',
+        '[class*="segment-assistant"]',
+        '[data-role="assistant"]'
       ],
       // メッセージ本文候補(見つかった最初のものを使う)
       contentSelectors: [
         '.markdown-container',
         '.markdown',
         '[class*="markdown"]',
+        '[class*="message-content"]',
+        '.segment-content'
+      ],
+      userContentSelectors: [
+        '[class*="query-text"]',
+        '[class*="user-text"]',
+        '[class*="user-content"]',
+        'p'
+      ],
+      assistantContentSelectors: [
+        '.markdown-container',
+        '.markdown',
+        '[class*="markdown"]',
         '[class*="message-content"]'
       ],
-      titleSelectors: ['.chat-title', '[class*="chat-title"]', 'title']
+      titleSelectors: ['.chat-title', '[class*="chat-title"]', '[data-testid*="chat-title"]', 'title']
     },
     {
       id: 'gemini',
@@ -947,7 +966,7 @@
     const t = (document.title || '').trim();
     // "Kimi - 〜" や "〜 | Genspark" のようなサイト名プレフィックス・サフィックスを除去
     return t.replace(/\s*[-|–]\s*(Kimi|Gemini|Claude|Google Gemini|Genspark|Genspark AI|ChatGPT|Grok|xAI)\s*$/i, '')
-            .replace(/^(Genspark|Genspark AI|Grok|xAI)\s*[-|–]\s*/i, '') || t || 'AI会話';
+            .replace(/^(Genspark|Genspark AI|Grok|xAI|Kimi)\s*[-|–]\s*/i, '') || t || 'AI会話';
   }
 
   // ---------------------------------------------------------------

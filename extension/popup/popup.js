@@ -69,7 +69,8 @@
           (p.startsWith('/i/grok') || p.startsWith('/grok'))) return true;
       return (
         h === 'kimi.moonshot.cn' || h.endsWith('.kimi.moonshot.cn') ||
-        h === 'www.kimi.com' || h === 'kimi.com' || h.endsWith('.kimi.com') ||
+        h === 'kimi.com' || h.endsWith('.kimi.com') ||
+        h === 'kimi.ai' || h.endsWith('.kimi.ai') ||
         h === 'gemini.google.com' || h.endsWith('.gemini.google.com') ||
         h === 'claude.ai' || h.endsWith('.claude.ai') ||
         h === 'genspark.ai' || h === 'www.genspark.ai' || h.endsWith('.genspark.ai') ||

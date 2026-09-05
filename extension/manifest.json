@@ -23,7 +23,11 @@
     {
       "matches": [
         "https://kimi.moonshot.cn/*",
-        "https://www.kimi.com/*",
+        "https://*.kimi.moonshot.cn/*",
+        "https://kimi.com/*",
+        "https://*.kimi.com/*",
+        "https://kimi.ai/*",
+        "https://*.kimi.ai/*",
         "https://gemini.google.com/*",
         "https://claude.ai/*",
         "https://www.genspark.ai/*",
@@ -42,7 +46,11 @@
   "permissions": ["storage", "activeTab", "tabs", "scripting"],
   "host_permissions": [
     "https://kimi.moonshot.cn/*",
-    "https://www.kimi.com/*",
+    "https://*.kimi.moonshot.cn/*",
+    "https://kimi.com/*",
+    "https://*.kimi.com/*",
+    "https://kimi.ai/*",
+    "https://*.kimi.ai/*",
     "https://gemini.google.com/*",
     "https://claude.ai/*",
     "https://www.genspark.ai/*",

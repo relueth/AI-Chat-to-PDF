@@ -12,7 +12,7 @@ AIの会話を **数式のレイアウトを崩さずに** **PDF / HTML / テキ
 
 ## 対応サービス（優先順位順）
 
-1. **Kimi** (`kimi.moonshot.cn`, `kimi.com`)
+1. **Kimi** (`kimi.ai`, `kimi.com`, `kimi.moonshot.cn`)
 2. **Gemini** (`gemini.google.com`)
 3. **Claude** (`claude.ai`)
 4. **Genspark** (`genspark.ai`)
