@@ -11,7 +11,8 @@
     gemini:   { name: 'Gemini',   className: 'gemini' },
     claude:   { name: 'Claude',   className: 'claude' },
     genspark: { name: 'Genspark', className: 'genspark' },
-    chatgpt:  { name: 'ChatGPT',  className: 'chatgpt' }
+    chatgpt:  { name: 'ChatGPT',  className: 'chatgpt' },
+    grok:     { name: 'Grok',     className: 'grok' }
   };
 
   const btn = document.getElementById('btn-export');
@@ -62,6 +63,10 @@
     try {
       const u = new URL(url);
       const h = u.hostname;
+      const p = u.pathname;
+      if (h === 'grok.com' || h.endsWith('.grok.com')) return true;
+      if ((h === 'x.com' || h.endsWith('.x.com') || h === 'twitter.com' || h.endsWith('.twitter.com')) &&
+          (p.startsWith('/i/grok') || p.startsWith('/grok'))) return true;
       return (
         h === 'kimi.moonshot.cn' || h.endsWith('.kimi.moonshot.cn') ||
         h === 'www.kimi.com' || h === 'kimi.com' || h.endsWith('.kimi.com') ||
@@ -78,7 +83,13 @@
 
   function siteFromUrl(url) {
     try {
-      const h = new URL(url).hostname;
+      const u = new URL(url);
+      const h = u.hostname;
+      const p = u.pathname;
+      if (h.includes('grok.com') ||
+          ((h.includes('x.com') || h.includes('twitter.com')) && (p.startsWith('/i/grok') || p.startsWith('/grok')))) {
+        return 'grok';
+      }
       if (h.includes('kimi')) return 'kimi';
       if (h.includes('gemini.google.com')) return 'gemini';
       if (h.includes('claude.ai')) return 'claude';
@@ -100,7 +111,7 @@
     if (!tab || !isSupportedUrl(tab.url || '')) {
       badge.textContent = '非対応ページ';
       badge.classList.add('unsupported');
-      setStatus('Kimi / Gemini / Claude / Genspark / ChatGPT の会話ページで開いてください。');
+      setStatus('Kimi / Gemini / Claude / Genspark / ChatGPT / Grok の会話ページで開いてください。');
       btn.disabled = true;
       return;
     }

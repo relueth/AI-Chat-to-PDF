@@ -42,6 +42,7 @@ body {
 .site-badge.claude  { background: #ffedd5; color: #c2410c; }
 .site-badge.genspark { background: #ecfccb; color: #4d7c0f; }
 .site-badge.chatgpt  { background: #d1fae5; color: #047857; }
+.site-badge.grok     { background: #0f172a; color: #f8fafc; }
 .site-badge.unsupported { background: #fee2e2; color: #b91c1c; }
 
 .status-text { font-size: 12px; color: #4b5563; line-height: 1.5; }

@@ -1,7 +1,7 @@
 {
   "name": "ai-chat-to-pdf",
   "version": "1.0.0",
-  "description": "Convert AI chat conversations (Kimi, Gemini, Claude, Genspark, ChatGPT) to PDF, HTML, or Markdown text with math formulas preserved.",
+  "description": "Convert AI chat conversations (Kimi, Gemini, Claude, Genspark, ChatGPT, Grok) to PDF, HTML, or Markdown text with math formulas preserved.",
   "type": "module",
   "main": "server.js",
   "scripts": {

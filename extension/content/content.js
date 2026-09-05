@@ -230,6 +230,98 @@
         '[data-testid="conversation-title"]',
         'title'
       ]
+    },
+    {
+      id: 'grok',
+      name: 'Grok',
+      hosts: ['grok.com', 'www.grok.com', 'x.com', 'twitter.com'],
+      pathFilter: (path, host) => {
+        if (host.includes('grok.com')) return true;
+        return path.startsWith('/i/grok') || path.startsWith('/grok');
+      },
+      itemSelectors: [
+        '[data-testid="message"]',
+        '[data-testid="user-message"]',
+        '[data-testid="assistant-message"]',
+        '[data-testid="grokResponse"]',
+        '[data-message-author-role="user"]',
+        '[data-message-author-role="assistant"]',
+        '.message-bubble',
+        '[class*="message-bubble"]',
+        '[class*="message_bubble"]',
+        '[class*="messageRow"]',
+        '[class*="message-row"]',
+        'div[class*="chat-message"]',
+        '[class*="response-content"]',
+        '[class*="conversation-item"]'
+      ],
+      userMatch: [
+        '[data-testid="user-message"]',
+        '[data-message-author-role="user"]',
+        '[class*="user-message"]',
+        '[class*="message-user"]',
+        '[class*="message-bubble"][class*="user"]',
+        '[class*="bubble-user"]',
+        '[class*="justify-end"]',
+        '[class*="items-end"]',
+        '[class*="self-end"]',
+        '[class*="ml-auto"]'
+      ],
+      assistantMatch: [
+        '[data-testid="assistant-message"]',
+        '[data-testid="grokResponse"]',
+        '[data-message-author-role="assistant"]',
+        '.response-content-markdown',
+        '[class*="response-content"]',
+        '[class*="message-bubble"][class*="assistant"]',
+        '[class*="message-assistant"]',
+        '[class*="assistant-message"]',
+        '[class*="bubble-assistant"]',
+        '.prose',
+        '[class*="prose"]',
+        '[class*="markdown"]',
+        '.markdown-body'
+      ],
+      contentSelectors: [
+        '.response-content-markdown',
+        '[class*="response-content"]',
+        '.prose',
+        '[class*="prose"]',
+        '[class*="markdown"]',
+        '.markdown-body',
+        '[data-testid="message"]',
+        '.message-bubble',
+        '[class*="message-bubble"]',
+        '[class*="message-content"]'
+      ],
+      userContentSelectors: [
+        '[class*="query-text"]',
+        '[class*="prompt-text"]',
+        '[class*="user-content"]',
+        '[class*="bubble"]',
+        '[class*="rounded"]',
+        'p',
+        'span'
+      ],
+      assistantContentSelectors: [
+        '.response-content-markdown',
+        '[class*="response-content"]',
+        '.prose',
+        '[class*="prose"]',
+        '[class*="markdown"]',
+        '.markdown-body',
+        '[data-testid="grokResponse"]'
+      ],
+      titleSelectors: [
+        '[data-testid="conversation-title"]',
+        '[data-testid="chat-title"]',
+        'header h1',
+        'header [class*="title"]',
+        '[class*="conversation-title"]',
+        '[class*="chat-title"]',
+        'h1',
+        'title'
+      ]
     }
   ];
 
@@ -240,7 +332,13 @@
 
   function detectSite() {
     const host = location.hostname;
-    return SITE_CONFIGS.find((c) => c.hosts.some((h) => host === h || host.endsWith('.' + h))) || null;
+    const path = location.pathname;
+    return SITE_CONFIGS.find((c) => {
+      const matchHost = c.hosts.some((h) => host === h || host.endsWith('.' + h));
+      if (!matchHost) return false;
+      if (c.pathFilter && !c.pathFilter(path, host)) return false;
+      return true;
+    }) || null;
   }
 
   function matchAny(el, selectors) {
@@ -727,6 +825,10 @@
 
     // 2) 検索入力欄やヘッダーのクエリ
     const candidates = [
+      'textarea[data-testid="grokInput"]',
+      '[data-testid="grokInput"]',
+      'textarea[placeholder*="Grok" i]',
+      'textarea[placeholder*="Ask" i]',
       'input[name="q"]',
       'textarea[name="q"]',
       '[class*="search-input"] input',
@@ -741,7 +843,7 @@
         const el = document.querySelector(sel);
         if (!el) continue;
         const text = (el.value || el.textContent || '').trim();
-        if (text && text.length > 1 && text.length < 500 && !/^(Genspark|AI Chat|ChatGPT|Gemini|Claude|Kimi)$/i.test(text)) {
+        if (text && text.length > 1 && text.length < 500 && !/^(Genspark|AI Chat|ChatGPT|Gemini|Claude|Kimi|Grok|xAI)$/i.test(text)) {
           return text;
         }
       } catch (_) { continue; }
@@ -844,8 +946,8 @@
     }
     const t = (document.title || '').trim();
     // "Kimi - 〜" や "〜 | Genspark" のようなサイト名プレフィックス・サフィックスを除去
-    return t.replace(/\s*[-|–]\s*(Kimi|Gemini|Claude|Google Gemini|Genspark|Genspark AI)\s*$/i, '')
-            .replace(/^(Genspark|Genspark AI)\s*[-|–]\s*/i, '') || t || 'AI会話';
+    return t.replace(/\s*[-|–]\s*(Kimi|Gemini|Claude|Google Gemini|Genspark|Genspark AI|ChatGPT|Grok|xAI)\s*$/i, '')
+            .replace(/^(Genspark|Genspark AI|Grok|xAI)\s*[-|–]\s*/i, '') || t || 'AI会話';
   }
 
   // ---------------------------------------------------------------

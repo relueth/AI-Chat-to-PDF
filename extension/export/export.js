@@ -99,7 +99,7 @@
 
     // 重複した「あなたのプロンプト」や「Gemini の回答」等のヘッダーを除去
     tpl.content.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="header"], [class*="title"], [class*="label"]').forEach((el) => {
-      if (/^(あなたのプロンプト|Your prompt|Gemini の回答|Gemini's response)/i.test(el.textContent.trim())) {
+      if (/^(あなたのプロンプト|Your prompt|Gemini の回答|Gemini's response|Grok の回答|Grok's response)/i.test(el.textContent.trim())) {
         el.remove();
       }
     });
