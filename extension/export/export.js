@@ -116,6 +116,30 @@
       }
     });
 
+    // 空の blockquote や 空のコンテナを除去 (添付ファイル周辺や単独の縦線を除去)
+    tpl.content.querySelectorAll('blockquote').forEach((bq) => {
+      if (!bq.textContent.trim() && !bq.querySelector('img')) {
+        bq.remove();
+      }
+    });
+
+    // 添付ファイルカード等の空の区切り縦線要素を除去
+    tpl.content.querySelectorAll('div, span, hr').forEach((el) => {
+      if (el.closest(MATH_CONTAINER)) return;
+      if (el.children.length === 0 && !el.textContent.trim() && !el.querySelector('img')) {
+        const cls = el.className || '';
+        if (typeof cls === 'string' && (
+          cls.includes('w-px') ||
+          cls.includes('border-l') ||
+          cls.includes('border-r') ||
+          cls.includes('divider') ||
+          cls.includes('separator')
+        )) {
+          el.remove();
+        }
+      }
+    });
+
     const all = tpl.content.querySelectorAll('*');
     for (const el of all) {
       for (const attr of [...el.attributes]) {
@@ -528,6 +552,26 @@
         new Promise((r) => setTimeout(r, 5000))
       ]);
     } catch (_) { /* noop */ }
+
+    // まだBase64化されていない外部画像があれば拡張機能のバックグラウンドSWでBase64取得
+    const remoteImgs = [...document.images].filter((img) => img.src && !img.src.startsWith('data:'));
+    if (remoteImgs.length > 0 && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      await Promise.allSettled(
+        remoteImgs.map((img) => new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { type: 'AI2PDF_FETCH_IMAGE_BASE64', url: img.src },
+            (resp) => {
+              if (resp && resp.ok && resp.dataUrl) {
+                img.src = resp.dataUrl;
+              }
+              resolve();
+            }
+          );
+          setTimeout(resolve, 4000);
+        }))
+      );
+    }
+
     const imgs = [...document.images];
     await Promise.allSettled(
       imgs.map((img) => (img.complete

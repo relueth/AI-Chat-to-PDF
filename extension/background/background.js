@@ -29,14 +29,23 @@ async function handleFetchImage(url, maxDim = 1200, quality = 0.82) {
     return url;
   }
 
-  // 拡張機能権限でのfetch (CORS制約なし)
-  const res = await fetch(url, {
-    credentials: 'include',
-    cache: 'force-cache'
-  });
+  // 拡張機能権限(host_permissions: <all_urls>)でのfetch
+  // Google CDN (lh3.googleusercontent.com 等) は Access-Control-Allow-Origin: * を返すため、
+  // credentials: 'include' を指定するとブラウザのCORS仕様によりTypeErrorで即時拒絶される。
+  // 公開・署名付きURLのため credentials を指定せず安全に取得する。
+  let res;
+  try {
+    res = await fetch(url, { cache: 'force-cache' });
+  } catch (_) {
+    try {
+      res = await fetch(url, { credentials: 'omit' });
+    } catch (_) {
+      res = await fetch(url);
+    }
+  }
 
-  if (!res.ok) {
-    throw new Error(`HTTP error ${res.status} ${res.statusText}`);
+  if (!res || !res.ok) {
+    throw new Error(`HTTP error ${res ? res.status : 'network error'}`);
   }
 
   const contentType = (res.headers.get('content-type') || '').toLowerCase();

@@ -162,6 +162,50 @@ body {
   border-left: 3px solid #d1d5db;
   color: #4b5563;
 }
+.msg-body blockquote:empty {
+  display: none !important;
+}
+.msg-body blockquote > img:only-child,
+.msg-body blockquote:has(> img:only-child) {
+  border-left: none !important;
+  padding-left: 0 !important;
+}
+
+/* 添付ファイル (ChatGPT / Claude / Gemini / Grok) */
+.msg-body [class*="attachment"],
+.msg-body [class*="file-chip"],
+.msg-body [class*="file-card"],
+.msg-body [class*="upload-file"],
+.msg-body [data-testid*="attachment"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 12px;
+  margin: 6px 0;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #374151;
+  text-decoration: none;
+}
+
+/* 添付ファイル内部の縦線・仕切り線の消去 (ChatGPTの添付ファイルの中央縦線対策) */
+.msg-body [class*="attachment"] [class*="w-px"],
+.msg-body [class*="attachment"] [class*="border-l"],
+.msg-body [class*="attachment"] [class*="border-r"],
+.msg-body [class*="file-"] [class*="w-px"],
+.msg-body [class*="file-"] [class*="border-l"],
+.msg-body [class*="file-"] [class*="border-r"],
+.msg-body [class*="w-px"],
+.msg-body div[class*="separator"]:empty,
+.msg-body div[class*="divider"]:empty {
+  display: none !important;
+  border: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
 
 /* コード */
 .msg-body code {

@@ -200,7 +200,11 @@
         '[class*="query-text"]',
         '.markdown.markdown-main-panel',
         '.markdown',
-        '[class*="response-container"]'
+        '[class*="response-container"]',
+        '[class*="image-container"]',
+        '[class*="media-carousel"]',
+        'generated-image',
+        'image-viewer'
       ],
       userContentSelectors: [
         '.query-content',
@@ -209,6 +213,8 @@
         'div.user-query-container',
         '.query-text',
         '[class*="query-text"]',
+        '[class*="attachment"]',
+        '[class*="image-container"]',
         'user-query'
       ],
       assistantContentSelectors: [
@@ -591,10 +597,10 @@
    */
   function isContentImage(img) {
     if (!img) return false;
-    // 祖先要素による除外: アバター、UIアクションバー、ヘッダー、ナビ等
+    // 祖先要素による除外: アバター、UIアクションバー、ナビ等(ヘッダーはプロンプトを含む場合があるため除外しない)
     if (img.closest(
       '[class*="avatar"], [class*="user-icon"], [class*="bot-icon"], ' +
-      '[class*="author-avatar"], [class*="account-circle"], header, nav, footer'
+      '[class*="author-avatar"], [class*="account-circle"], nav, footer'
     )) {
       return false;
     }
@@ -742,6 +748,39 @@
       }
     }
 
+    // 空の blockquote の除去 (添付ファイル周りや不要な縦線だけが残るのを防止)
+    clone.querySelectorAll('blockquote').forEach((bq) => {
+      if (!bq.textContent.trim() && !bq.querySelector('img')) {
+        bq.remove();
+      }
+    });
+
+    // ChatGPT等の添付ファイルカード内の仕切り線 (w-px, border-l, border-r などの空要素) を除去
+    clone.querySelectorAll(
+      '[class*="w-px"], [class*="h-full"][class*="w-"], [class*="divider"], [class*="separator"], hr'
+    ).forEach((el) => {
+      if (!el.closest(MATH_CONTAINER) && (!el.textContent.trim() || el.children.length === 0) && !el.querySelector('img')) {
+        el.remove();
+      }
+    });
+
+    // 空の仕切り線・縦線の除去
+    clone.querySelectorAll('div, span').forEach((el) => {
+      if (el.closest(MATH_CONTAINER)) return;
+      if (el.children.length === 0 && !el.textContent.trim() && !el.querySelector('img')) {
+        const cls = el.className || '';
+        if (typeof cls === 'string' && (
+          cls.includes('w-px') ||
+          cls.includes('border-l') ||
+          cls.includes('border-r') ||
+          cls.includes('divider') ||
+          cls.includes('separator')
+        )) {
+          el.remove();
+        }
+      }
+    });
+
     // インラインstyleはチャット画面の配色(ダーク等)を持ち込むため除去するが、
     // KaTeX(.katex)・MathJax(mjx-*)数式の内部は vertical-align / top / height 等の
     // インラインstyleで添字・指数・分数の縦位置を調整しているため「保持」する。
@@ -854,9 +893,16 @@
             const text = contentNode.textContent.trim();
             if (!text && itemImgs.length === 0 && nodeImgs.length === 0) continue;
 
-            const clone = sanitizeClone(contentNode);
+            let clone;
+            if (contentNode.tagName === 'IMG') {
+              clone = document.createElement('div');
+              clone.appendChild(sanitizeClone(contentNode));
+            } else {
+              clone = sanitizeClone(contentNode);
+            }
+
             if (itemImgs.length > 0) {
-              const existingSrcs = new Set([...clone.querySelectorAll('img')].map(getImageSourceUrl));
+              const existingSrcs = new Set([...clone.querySelectorAll('img')].map(getImageSourceUrl).filter(Boolean));
               for (const extraImg of itemImgs) {
                 const s = getImageSourceUrl(extraImg);
                 if (s && !existingSrcs.has(s)) {
@@ -866,10 +912,11 @@
               }
             }
             const imgKey = itemImgs.length > 0 ? (itemImgs[0].getAttribute('src') || '').slice(-30) : '';
+            const htmlContent = clone.innerHTML.trim() || (clone.tagName === 'IMG' ? clone.outerHTML : '');
             results.push({
               key: hashKey(subRole + '|' + text.slice(0, 300) + '|' + imgKey),
               role: subRole,
-              html: clone.innerHTML
+              html: htmlContent
             });
           }
           continue;
@@ -886,9 +933,16 @@
       const text = contentNode.textContent.trim();
       if (!text && itemImgs.length === 0 && nodeImgs.length === 0) continue;
 
-      const clone = sanitizeClone(contentNode);
+      let clone;
+      if (contentNode.tagName === 'IMG') {
+        clone = document.createElement('div');
+        clone.appendChild(sanitizeClone(contentNode));
+      } else {
+        clone = sanitizeClone(contentNode);
+      }
+
       if (itemImgs.length > 0) {
-        const existingSrcs = new Set([...clone.querySelectorAll('img')].map(getImageSourceUrl));
+        const existingSrcs = new Set([...clone.querySelectorAll('img')].map(getImageSourceUrl).filter(Boolean));
         for (const extraImg of itemImgs) {
           const s = getImageSourceUrl(extraImg);
           if (s && !existingSrcs.has(s)) {
@@ -898,10 +952,11 @@
         }
       }
       const imgKey = itemImgs.length > 0 ? (itemImgs[0].getAttribute('src') || '').slice(-30) : '';
+      const htmlContent = clone.innerHTML.trim() || (clone.tagName === 'IMG' ? clone.outerHTML : '');
       results.push({
         key: hashKey(role + '|' + text.slice(0, 300) + '|' + imgKey),
         role,
-        html: clone.innerHTML
+        html: htmlContent
       });
     }
     return results;
@@ -1394,16 +1449,22 @@
    * 抽出された全メッセージの画像をBase64形式に一括変換
    */
   async function embedImagesInMessages(messages) {
-    // ページ上の既存img要素をsrcごとにマップ化(探索を高速化)
+    // ページ上の既存img要素を各種属性(src, currentSrc, ng-reflect-src等)ごとにマップ化(探索を高速化)
     const pageImgsBySrc = new Map();
     document.querySelectorAll('img').forEach((img) => {
-      const s = img.getAttribute('src');
-      if (s && !pageImgsBySrc.has(s)) {
-        pageImgsBySrc.set(s, img);
-      }
-      const cur = img.currentSrc;
-      if (cur && !pageImgsBySrc.has(cur)) {
-        pageImgsBySrc.set(cur, img);
+      const candidates = [
+        img.getAttribute('src'),
+        img.src,
+        img.currentSrc,
+        img.getAttribute('data-src'),
+        img.getAttribute('ng-reflect-src'),
+        img.getAttribute('ng-reflect-ng-src'),
+        getImageSourceUrl(img)
+      ];
+      for (const c of candidates) {
+        if (c && !pageImgsBySrc.has(c)) {
+          pageImgsBySrc.set(c, img);
+        }
       }
     });
 
@@ -1419,18 +1480,14 @@
       let modified = false;
 
       for (const img of imgs) {
-        if (!isContentImage(img)) {
-          img.remove();
-          modified = true;
-          continue;
-        }
-
-        const src = img.getAttribute('src');
+        const src = getImageSourceUrl(img) || img.getAttribute('src');
         if (!src) continue;
 
         let base64 = cache.get(src);
         if (!base64) {
-          const liveImg = pageImgsBySrc.get(src);
+          const liveImg = pageImgsBySrc.get(src) ||
+            pageImgsBySrc.get(img.getAttribute('src')) ||
+            pageImgsBySrc.get(img.src);
           base64 = await resolveImageAsBase64(liveImg, src);
           if (base64) {
             cache.set(src, base64);
@@ -1441,9 +1498,12 @@
           img.setAttribute('src', base64);
           img.removeAttribute('srcset');
           img.removeAttribute('loading');
+          img.removeAttribute('style');
           img.style.maxWidth = '100%';
           img.style.height = 'auto';
           img.style.borderRadius = '8px';
+          img.style.display = 'block';
+          img.style.margin = '10px 0';
           modified = true;
         }
       }
