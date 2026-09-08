@@ -168,22 +168,56 @@
       id: 'gemini',
       name: 'Gemini',
       hosts: ['gemini.google.com'],
-      itemSelectors: ['user-query', 'model-response'],
-      userMatch: ['user-query'],
-      assistantMatch: ['model-response'],
+      itemSelectors: [
+        'user-query',
+        'model-response',
+        '[class*="user-query"]',
+        '[class*="model-response"]',
+        '[data-role="user"]',
+        '[data-role="model"]',
+        '[data-role="assistant"]',
+        '[class*="turn-container"]',
+        '[class*="conversation-turn"]'
+      ],
+      userMatch: [
+        'user-query',
+        '[class*="user-query"]',
+        '[data-role="user"]'
+      ],
+      assistantMatch: [
+        'model-response',
+        '[class*="model-response"]',
+        '[data-role="model"]',
+        '[data-role="assistant"]'
+      ],
       contentSelectors: [
+        'message-content',
+        '[class*="message-content"]',
+        '.query-content',
+        '[class*="query-content"]',
+        '[class*="user-query-container"]',
         '.query-text',
+        '[class*="query-text"]',
         '.markdown.markdown-main-panel',
         '.markdown',
-        'message-content',
         '[class*="response-container"]'
       ],
-      userContentSelectors: ['.query-text', '[class*="query-text"]'],
+      userContentSelectors: [
+        '.query-content',
+        '[class*="query-content"]',
+        '[class*="user-query-container"]',
+        'div.user-query-container',
+        '.query-text',
+        '[class*="query-text"]',
+        'user-query'
+      ],
       assistantContentSelectors: [
+        'message-content',
+        '[class*="message-content"]',
         '.markdown.markdown-main-panel',
         '.markdown',
-        'message-content',
-        '[class*="response-container"]'
+        '[class*="response-container"]',
+        'model-response'
       ],
       titleSelectors: ['.conversation-title', '[class*="conversation"] [class*="title"]', 'title']
     },
@@ -531,23 +565,45 @@
   const MATH_CONTAINER = '.katex, .katex-display, mjx-container, [class*="mjx-"], .MathJax, [class*="math"], [class*="katex"], [class*="latex"], math';
 
   /**
+   * img要素から実際のURLを取得(src, data-src, ng-reflect-src, srcset等)
+   */
+  function getImageSourceUrl(img) {
+    if (!img) return '';
+    let s = img.getAttribute('src') ||
+            img.src ||
+            img.getAttribute('data-src') ||
+            img.getAttribute('ng-reflect-src') ||
+            img.getAttribute('ng-reflect-ng-src') ||
+            img.currentSrc ||
+            '';
+    if (s && !s.startsWith('javascript:')) return s;
+    const srcset = img.getAttribute('srcset') || '';
+    if (srcset) {
+      const first = srcset.split(',')[0].trim().split(/\s+/)[0];
+      if (first && !first.startsWith('javascript:')) return first;
+    }
+    return '';
+  }
+
+  /**
    * 画像要素がコンテンツ画像(ユーザー投稿画像 or AI生成・出力画像)かどうか判定
-   * アバターやUIアイコン・装飾SVG等のノイズを除去
+   * アバターやUIアイコン等のノイズを除去
    */
   function isContentImage(img) {
     if (!img) return false;
-    // 祖先要素による除外: アバター、プロフィール、UIアクションバー、ヘッダー、ナビ等
+    // 祖先要素による除外: アバター、UIアクションバー、ヘッダー、ナビ等
     if (img.closest(
-      '[class*="avatar"], [class*="profile"], [class*="user-icon"], [class*="bot-icon"], ' +
-      '[class*="model-icon"], [class*="author-avatar"], header, nav, footer'
+      '[class*="avatar"], [class*="user-icon"], [class*="bot-icon"], ' +
+      '[class*="author-avatar"], [class*="account-circle"], header, nav, footer'
     )) {
       return false;
     }
     const alt = (img.getAttribute('alt') || '').toLowerCase();
-    if (/(avatar|profile|user photo|assistant photo|model photo|bot icon)/i.test(alt)) {
+    // アバター専用の明確な文字列のみ除外(「profile photo of cat」等の生成プロンプト画像を除外しない)
+    if (/(user avatar|assistant avatar|bot avatar|author avatar|profile avatar|account icon)/i.test(alt)) {
       return false;
     }
-    const src = img.getAttribute('src') || '';
+    const src = getImageSourceUrl(img);
     if (!src || src.startsWith('javascript:')) return false;
 
     // 1x1 トラッキングピクセル等の除外
@@ -555,14 +611,50 @@
       return false;
     }
 
-    // 極小アイコン (32px以下) の除外 (明示的な寸法がある場合)
+    // 極小アイコン (24px以下) の除外 (明示的な寸法がある場合)
     const w = img.naturalWidth || img.width;
     const h = img.naturalHeight || img.height;
-    if (w > 0 && h > 0 && w <= 32 && h <= 32) {
+    if (w > 0 && h > 0 && w <= 24 && h <= 24) {
       return false;
     }
 
     return true;
+  }
+
+  /**
+   * 要素ツリー内の画像の属性を正規化し、CSS background-image からも画像を復元
+   */
+  function normalizeImages(root) {
+    if (!root) return;
+    root.querySelectorAll('img').forEach((img) => {
+      const s = getImageSourceUrl(img);
+      if (s && !img.getAttribute('src')) {
+        img.setAttribute('src', s);
+      }
+    });
+
+    // background-image から画像要素を抽出
+    root.querySelectorAll('*').forEach((el) => {
+      if (el.tagName === 'IMG' || el.tagName === 'SVG' || el.closest(MATH_CONTAINER)) return;
+      const bg = el.style.backgroundImage || (typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(el).backgroundImage : '');
+      if (bg && bg.startsWith('url(') && !bg.includes('data:image/svg+xml')) {
+        const match = bg.match(/url\(['"]?(.*?)['"]?\)/);
+        if (match && match[1] && !match[1].startsWith('data:image/svg')) {
+          const url = match[1];
+          const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { width: 100, height: 100 };
+          if (rect.width > 40 && rect.height > 40 && !el.querySelector('img')) {
+            const img = document.createElement('img');
+            img.src = url;
+            img.setAttribute('src', url);
+            img.setAttribute('referrerpolicy', 'no-referrer');
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+            img.style.borderRadius = '8px';
+            el.appendChild(img);
+          }
+        }
+      }
+    });
   }
 
   const REMOVE_SELECTORS = [
@@ -596,16 +688,7 @@
 
   function sanitizeClone(root) {
     const clone = root.cloneNode(true);
-
-    // 画像を含むボタンや [role="button"] は、画像を保持してボタン要素のみアンラップ
-    clone.querySelectorAll('button, [role="button"]').forEach((btn) => {
-      const imgs = [...btn.querySelectorAll('img')].filter(isContentImage);
-      if (imgs.length > 0) {
-        const frag = document.createDocumentFragment();
-        imgs.forEach((img) => frag.appendChild(img));
-        btn.replaceWith(frag);
-      }
-    });
+    normalizeImages(clone);
 
     // Gemini Notebook / NotebookLM の引用・出典番号バッジ(ボタン形式)を保持してsup要素に変換
     clone.querySelectorAll('button[class*="citation"], [class*="citation-chip"], [class*="citation-pill"], [class*="citation-marker"], [class*="source-citation"], [data-source-id], [data-source-index], sup button').forEach((btn) => {
@@ -618,9 +701,23 @@
       }
     });
 
-    for (const sel of REMOVE_SELECTORS) {
-      clone.querySelectorAll(sel).forEach((n) => n.remove());
-    }
+    // REMOVE_SELECTORS の要素を処理: コンテンツ画像を含んでいる場合は画像を救出して要素のみ除去
+    clone.querySelectorAll(REMOVE_SELECTORS.join(', ')).forEach((el) => {
+      if (el.closest(MATH_CONTAINER)) return;
+
+      const imgs = [...el.querySelectorAll('img')].filter(isContentImage);
+      if (imgs.length > 0) {
+        const frag = document.createDocumentFragment();
+        imgs.forEach((img) => {
+          const s = getImageSourceUrl(img);
+          if (s) img.setAttribute('src', s);
+          frag.appendChild(img);
+        });
+        el.replaceWith(frag);
+      } else {
+        el.remove();
+      }
+    });
 
     // アイコン等のSVGを除去するが、KaTeX/MathJax等の数式用SVG(根号、矢印、括弧等)は確実に保持する
     clone.querySelectorAll('svg').forEach((n) => {
@@ -758,9 +855,14 @@
             if (!text && itemImgs.length === 0 && nodeImgs.length === 0) continue;
 
             const clone = sanitizeClone(contentNode);
-            if (itemImgs.length > 0 && nodeImgs.length === 0) {
+            if (itemImgs.length > 0) {
+              const existingSrcs = new Set([...clone.querySelectorAll('img')].map(getImageSourceUrl));
               for (const extraImg of itemImgs) {
-                clone.appendChild(sanitizeClone(extraImg));
+                const s = getImageSourceUrl(extraImg);
+                if (s && !existingSrcs.has(s)) {
+                  existingSrcs.add(s);
+                  clone.appendChild(sanitizeClone(extraImg));
+                }
               }
             }
             const imgKey = itemImgs.length > 0 ? (itemImgs[0].getAttribute('src') || '').slice(-30) : '';
@@ -785,9 +887,14 @@
       if (!text && itemImgs.length === 0 && nodeImgs.length === 0) continue;
 
       const clone = sanitizeClone(contentNode);
-      if (itemImgs.length > 0 && nodeImgs.length === 0) {
+      if (itemImgs.length > 0) {
+        const existingSrcs = new Set([...clone.querySelectorAll('img')].map(getImageSourceUrl));
         for (const extraImg of itemImgs) {
-          clone.appendChild(sanitizeClone(extraImg));
+          const s = getImageSourceUrl(extraImg);
+          if (s && !existingSrcs.has(s)) {
+            existingSrcs.add(s);
+            clone.appendChild(sanitizeClone(extraImg));
+          }
         }
       }
       const imgKey = itemImgs.length > 0 ? (itemImgs[0].getAttribute('src') || '').slice(-30) : '';
@@ -1259,7 +1366,27 @@
       return fetchedDataUrl;
     }
 
-    // 3) どうしても変換できなかった場合は元のURLをフォールバックとして残す
+    // 3) Background Service Worker (拡張機能権限・host_permissions) 経由での取得
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        const bgResult = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { type: 'AI2PDF_FETCH_IMAGE_BASE64', url: absUrl },
+            (resp) => {
+              if (chrome.runtime.lastError || !resp || !resp.ok) {
+                resolve(null);
+              } else {
+                resolve(resp.dataUrl);
+              }
+            }
+          );
+          setTimeout(() => resolve(null), 6000);
+        });
+        if (bgResult) return bgResult;
+      }
+    } catch (_) {}
+
+    // 4) どうしても変換できなかった場合は元のURLをフォールバックとして残す
     return absUrl;
   }
 
