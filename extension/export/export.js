@@ -366,6 +366,13 @@
       return;
     }
 
+    // 出典・引用バッジ (Gemini Notebook / NotebookLM 等)
+    if (el.classList.contains('citation-badge')) {
+      const txt = el.textContent.trim();
+      out.push(txt.startsWith('[') ? txt : `[${txt}]`);
+      return;
+    }
+
     switch (tag) {
       case 'h1': case 'h2': case 'h3':
       case 'h4': case 'h5': case 'h6': {
@@ -430,7 +437,8 @@
       case 'img': {
         const src = el.getAttribute('src') || '';
         const alt = el.getAttribute('alt') || '画像';
-        out.push('[画像: ' + alt + (src ? ' ' + src : '') + ']');
+        const isData = src.startsWith('data:');
+        out.push('\n[画像: ' + (alt || '添付画像') + (!isData && src ? ' ' + src : '') + ']\n');
         return;
       }
       case 'hr':
@@ -550,9 +558,13 @@
 
     if (!payload || !payload.messages || !payload.messages.length) {
       loadingEl.innerHTML =
-        '<p style="max-width:420px;text-align:center;line-height:1.8">' +
-        '会話データが見つかりません。<br>' +
-        '拡張機能のポップアップから変換を実行してください。</p>';
+        '<div style="max-width:520px;text-align:center;line-height:1.7;padding:32px 28px;background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;box-shadow:0 2px 8px rgba(0,0,0,0.06);">' +
+        '<h2 style="font-size:18px;font-weight:700;margin:0 0 10px;color:#111827;">AI Chat to PDF 拡張機能</h2>' +
+        '<p style="font-size:13px;color:#4b5563;margin-bottom:20px;">' +
+        'Kimi / Gemini / Gemini Notebook (NotebookLM) / Claude / Genspark / ChatGPT / Grok の会話ページで拡張機能アイコンをクリックして変換を実行してください。<br>' +
+        '以下のボタンから拡張機能のZIPパッケージをダウンロードしてChromeに追加できます。</p>' +
+        '<a href="/api/download-extension-zip" class="tbtn tbtn-primary" style="display:inline-block;padding:10px 22px;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;border-radius:8px;">拡張機能（ZIP）をダウンロード</a>' +
+        '</div>';
       return;
     }
 

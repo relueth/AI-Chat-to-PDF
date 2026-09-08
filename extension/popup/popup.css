@@ -38,6 +38,7 @@ body {
   margin-bottom: 8px;
 }
 .site-badge.kimi    { background: #e0f2fe; color: #0369a1; }
+.site-badge.gemini-notebook { background: #e0e7ff; color: #3730a3; }
 .site-badge.gemini  { background: #f3e8ff; color: #7e22ce; }
 .site-badge.claude  { background: #ffedd5; color: #c2410c; }
 .site-badge.genspark { background: #ecfccb; color: #4d7c0f; }

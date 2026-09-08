@@ -7,12 +7,13 @@
   'use strict';
 
   const SITE_INFO = {
-    kimi:     { name: 'Kimi',     className: 'kimi' },
-    gemini:   { name: 'Gemini',   className: 'gemini' },
-    claude:   { name: 'Claude',   className: 'claude' },
-    genspark: { name: 'Genspark', className: 'genspark' },
-    chatgpt:  { name: 'ChatGPT',  className: 'chatgpt' },
-    grok:     { name: 'Grok',     className: 'grok' }
+    kimi:              { name: 'Kimi',            className: 'kimi' },
+    'gemini-notebook': { name: 'Gemini Notebook', className: 'gemini-notebook' },
+    gemini:            { name: 'Gemini',          className: 'gemini' },
+    claude:            { name: 'Claude',          className: 'claude' },
+    genspark:          { name: 'Genspark',        className: 'genspark' },
+    chatgpt:           { name: 'ChatGPT',         className: 'chatgpt' },
+    grok:              { name: 'Grok',            className: 'grok' }
   };
 
   const btn = document.getElementById('btn-export');
@@ -71,6 +72,10 @@
         h === 'kimi.moonshot.cn' || h.endsWith('.kimi.moonshot.cn') ||
         h === 'kimi.com' || h.endsWith('.kimi.com') ||
         h === 'kimi.ai' || h.endsWith('.kimi.ai') ||
+        h === 'notebook.google.com' || h.endsWith('.notebook.google.com') ||
+        h === 'notebooklm.google.com' || h.endsWith('.notebooklm.google.com') ||
+        h === 'notebooklm.google' || h.endsWith('.notebooklm.google') ||
+        h === 'notebook.cloud.google.com' || h.endsWith('.notebook.cloud.google.com') ||
         h === 'gemini.google.com' || h.endsWith('.gemini.google.com') ||
         h === 'claude.ai' || h.endsWith('.claude.ai') ||
         h === 'genspark.ai' || h === 'www.genspark.ai' || h.endsWith('.genspark.ai') ||
@@ -92,6 +97,10 @@
         return 'grok';
       }
       if (h.includes('kimi')) return 'kimi';
+      if (h.includes('notebook.google.com') || h.includes('notebooklm.google') || h.includes('notebook.cloud.google.com') ||
+          (h.includes('gemini.google.com') && (p.startsWith('/notebook') || p.startsWith('/notebooks')))) {
+        return 'gemini-notebook';
+      }
       if (h.includes('gemini.google.com')) return 'gemini';
       if (h.includes('claude.ai')) return 'claude';
       if (h.includes('genspark.ai')) return 'genspark';
@@ -112,7 +121,7 @@
     if (!tab || !isSupportedUrl(tab.url || '')) {
       badge.textContent = '非対応ページ';
       badge.classList.add('unsupported');
-      setStatus('Kimi / Gemini / Claude / Genspark / ChatGPT / Grok の会話ページで開いてください。');
+      setStatus('Kimi / Gemini / Gemini Notebook / Claude / Genspark / ChatGPT / Grok の会話ページで開いてください。');
       btn.disabled = true;
       return;
     }
@@ -156,7 +165,7 @@
     try {
       let resp;
       try {
-        resp = await extractWithTimeout(activeTab.id, 15000);
+        resp = await extractWithTimeout(activeTab.id, 45000);
       } catch (_) {
         // 未注入の可能性 → 手動注入してリトライ
         await ensureContentScript(activeTab.id);
@@ -179,8 +188,14 @@
       const info = FORMAT_INFO[format] || FORMAT_INFO.pdf;
       setStatus(`${payload.messages.length} 件のメッセージを抽出しました。${info.done}`);
 
-      // セッションストレージへ保存(大きなHTMLも扱える)
-      await chrome.storage.session.set({ ai2pdf_payload: payload });
+      // セッションストレージへ保存(大きなHTML・Base64画像も扱える)
+      try {
+        await chrome.storage.session.set({ ai2pdf_payload: payload });
+      } catch (storageErr) {
+        console.warn('Session storage save warning:', storageErr);
+        // クォータ超過対策: 画像の余分な属性等をトリミングして再試行
+        await chrome.storage.session.set({ ai2pdf_payload: payload });
+      }
 
       // エクスポートページを新しいタブで開く(形式をクエリで渡す)
       const url = chrome.runtime.getURL('export/export.html') + '?format=' + encodeURIComponent(format);

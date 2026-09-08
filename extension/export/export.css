@@ -196,11 +196,39 @@ body {
 .msg-body img {
   max-width: 100%;
   height: auto;
-  border-radius: 6px;
+  border-radius: 8px;
+  display: block;
+  margin: 12px 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 /* リンク */
 .msg-body a { color: #2563eb; text-decoration: underline; }
+
+/* 出典・引用バッジ (Gemini Notebook / NotebookLM 等) */
+.citation-badge {
+  display: inline-block;
+  font-size: 0.72em;
+  line-height: 1;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: 0 2px;
+  vertical-align: baseline;
+  position: relative;
+  top: -0.35em;
+  user-select: none;
+}
+@media print {
+  .citation-badge {
+    background: transparent;
+    border-color: #93c5fd;
+    color: #1e40af;
+  }
+}
 
 /* ============================================================
    数式 (KaTeX) - 印刷で形を崩さないための調整
@@ -277,10 +305,16 @@ body {
     box-shadow: none;
   }
 
-  /* 数式・コードブロック・表は改ページしない */
+  /* 数式・コードブロック・表・画像は改ページしない */
   .katex-display, pre, table, blockquote, .msg-body img {
     break-inside: avoid-page;
     page-break-inside: avoid;
+  }
+
+  .msg-body img {
+    box-shadow: none;
+    max-height: 200mm;
+    object-fit: contain;
   }
 
   /* 横長数式がページ幅を超える場合の安全策 */

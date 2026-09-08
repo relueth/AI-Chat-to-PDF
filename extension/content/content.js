@@ -60,6 +60,111 @@
       titleSelectors: ['.chat-title', '[class*="chat-title"]', '[data-testid*="chat-title"]', 'title']
     },
     {
+      id: 'gemini-notebook',
+      name: 'Gemini Notebook',
+      hosts: [
+        'notebook.google.com',
+        'notebooklm.google.com',
+        'notebooklm.google',
+        'notebook.cloud.google.com',
+        'gemini.google.com'
+      ],
+      pathFilter: (path, host) => {
+        if (host.includes('gemini.google.com')) {
+          return path.startsWith('/notebook') || path.startsWith('/notebooks');
+        }
+        return true;
+      },
+      itemSelectors: [
+        // Gemini Notebook (NotebookLM) のチャット要素
+        '.to-user-message',
+        '.from-user-message',
+        '[class*="to-user-message"]',
+        '[class*="from-user-message"]',
+        '.to-user-message-inner-content',
+        '.from-user-message-inner-content',
+        'chat-message',
+        'chat-turn',
+        'conversation-turn',
+        '[class*="chat-turn"]',
+        '[class*="chat-message"]',
+        '[class*="message-bubble"]',
+        '[class*="turn-item"]',
+        '[class*="conversation-turn"]',
+        '[data-role="user"]',
+        '[data-role="assistant"]',
+        'user-query',
+        'model-response'
+      ],
+      userMatch: [
+        '.from-user-message',
+        '.from-user-message-inner-content',
+        '[class*="from-user-message"]',
+        '[class*="from-user"]',
+        '[class*="user-query"]',
+        '[class*="user-message"]',
+        '[class*="query-container"]',
+        '[data-role="user"]',
+        'user-query'
+      ],
+      assistantMatch: [
+        '.to-user-message',
+        '.to-user-message-inner-content',
+        '[class*="to-user-message"]',
+        '[class*="to-user"]',
+        'labs-tailwind-structural-element-view-v2',
+        '[class*="assistant-message"]',
+        '[class*="model-response"]',
+        '[class*="response-container"]',
+        '[data-role="assistant"]',
+        'model-response'
+      ],
+      userContentSelectors: [
+        '.from-user-message-inner-content',
+        '[class*="from-user-message"]',
+        '[class*="query-text"]',
+        '[class*="user-text"]',
+        '[class*="user-content"]',
+        'p',
+        'span'
+      ],
+      assistantContentSelectors: [
+        '.to-user-message-inner-content',
+        'labs-tailwind-structural-element-view-v2',
+        'div.table-paragraph',
+        '[class*="to-user-message"]',
+        '.markdown-container',
+        '.markdown',
+        '[class*="markdown"]',
+        '[class*="message-content"]',
+        '[class*="response-content"]',
+        'div[class*="paragraph"]'
+      ],
+      contentSelectors: [
+        '.to-user-message-inner-content',
+        '.from-user-message-inner-content',
+        'labs-tailwind-structural-element-view-v2',
+        'div.table-paragraph',
+        '.markdown',
+        '[class*="markdown"]',
+        '[class*="message-content"]',
+        '[class*="response-content"]',
+        'div[class*="paragraph"]'
+      ],
+      titleSelectors: [
+        'input[aria-label*="Notebook title"]',
+        'input[aria-label*="ノートブックのタイトル"]',
+        'input[placeholder*="Untitled notebook"]',
+        'input[placeholder*="無題のノートブック"]',
+        '[class*="notebook-title"]',
+        '[class*="title-input"]',
+        'header h1',
+        'h1[class*="title"]',
+        '[class*="conversation-title"]',
+        'title'
+      ]
+    },
+    {
       id: 'gemini',
       name: 'Gemini',
       hosts: ['gemini.google.com'],
@@ -421,9 +526,44 @@
   }
 
   // ---------------------------------------------------------------
-  // サニタイズ: ボタン類・ツールバーを除去しつつ数式HTMLは保持
+  // 画像処理 & サニタイズ: ボタン類・ツールバーを除去しつつ数式HTMLと画像を保持
   // ---------------------------------------------------------------
   const MATH_CONTAINER = '.katex, .katex-display, mjx-container, [class*="mjx-"], .MathJax, [class*="math"], [class*="katex"], [class*="latex"], math';
+
+  /**
+   * 画像要素がコンテンツ画像(ユーザー投稿画像 or AI生成・出力画像)かどうか判定
+   * アバターやUIアイコン・装飾SVG等のノイズを除去
+   */
+  function isContentImage(img) {
+    if (!img) return false;
+    // 祖先要素による除外: アバター、プロフィール、UIアクションバー、ヘッダー、ナビ等
+    if (img.closest(
+      '[class*="avatar"], [class*="profile"], [class*="user-icon"], [class*="bot-icon"], ' +
+      '[class*="model-icon"], [class*="author-avatar"], header, nav, footer'
+    )) {
+      return false;
+    }
+    const alt = (img.getAttribute('alt') || '').toLowerCase();
+    if (/(avatar|profile|user photo|assistant photo|model photo|bot icon)/i.test(alt)) {
+      return false;
+    }
+    const src = img.getAttribute('src') || '';
+    if (!src || src.startsWith('javascript:')) return false;
+
+    // 1x1 トラッキングピクセル等の除外
+    if ((img.naturalWidth === 1 && img.naturalHeight === 1) || (img.width === 1 && img.height === 1)) {
+      return false;
+    }
+
+    // 極小アイコン (32px以下) の除外 (明示的な寸法がある場合)
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (w > 0 && h > 0 && w <= 32 && h <= 32) {
+      return false;
+    }
+
+    return true;
+  }
 
   const REMOVE_SELECTORS = [
     'button',
@@ -456,6 +596,28 @@
 
   function sanitizeClone(root) {
     const clone = root.cloneNode(true);
+
+    // 画像を含むボタンや [role="button"] は、画像を保持してボタン要素のみアンラップ
+    clone.querySelectorAll('button, [role="button"]').forEach((btn) => {
+      const imgs = [...btn.querySelectorAll('img')].filter(isContentImage);
+      if (imgs.length > 0) {
+        const frag = document.createDocumentFragment();
+        imgs.forEach((img) => frag.appendChild(img));
+        btn.replaceWith(frag);
+      }
+    });
+
+    // Gemini Notebook / NotebookLM の引用・出典番号バッジ(ボタン形式)を保持してsup要素に変換
+    clone.querySelectorAll('button[class*="citation"], [class*="citation-chip"], [class*="citation-pill"], [class*="citation-marker"], [class*="source-citation"], [data-source-id], [data-source-index], sup button').forEach((btn) => {
+      const num = btn.textContent.trim();
+      if (num && /^(\d+|\[\d+\])$/.test(num)) {
+        const sup = document.createElement('sup');
+        sup.className = 'citation-badge';
+        sup.textContent = num.startsWith('[') ? num : `[${num}]`;
+        btn.replaceWith(sup);
+      }
+    });
+
     for (const sel of REMOVE_SELECTORS) {
       clone.querySelectorAll(sel).forEach((n) => n.remove());
     }
@@ -500,6 +662,9 @@
       }
       if (el.tagName === 'IMG') {
         el.setAttribute('loading', 'eager');
+        el.style.maxWidth = '100%';
+        el.style.height = 'auto';
+        el.style.borderRadius = '8px';
       }
     }
     return clone;
@@ -535,7 +700,7 @@
         try {
           if (item.matches(sel)) return item;
           const found = item.querySelector(sel);
-          if (found && found.textContent.trim().length > 0) {
+          if (found && (found.textContent.trim().length > 0 || found.querySelector('img'))) {
             // AIのmarkdown本文を含む要素はユーザー本文として誤認しないよう除外
             const hasAiContent = !!found.querySelector('.markdown-body, [class*="markdown"], [class*="prose"]');
             if (!hasAiContent) return found;
@@ -553,7 +718,7 @@
       try {
         if (item.matches(sel)) return item;
         const found = item.querySelector(sel);
-        if (found && found.textContent.trim().length > 0) return found;
+        if (found && (found.textContent.trim().length > 0 || found.querySelector('img'))) return found;
       } catch (_) { continue; }
     }
     return item;
@@ -587,11 +752,20 @@
           for (const sub of subItems) {
             const subRole = sub === userEl ? 'user' : 'assistant';
             const contentNode = findContentNode(sub, cfg, subRole);
+            const itemImgs = [...sub.querySelectorAll('img')].filter(isContentImage);
+            const nodeImgs = [...contentNode.querySelectorAll('img')].filter(isContentImage);
             const text = contentNode.textContent.trim();
-            if (!text && !contentNode.querySelector('img')) continue;
+            if (!text && itemImgs.length === 0 && nodeImgs.length === 0) continue;
+
             const clone = sanitizeClone(contentNode);
+            if (itemImgs.length > 0 && nodeImgs.length === 0) {
+              for (const extraImg of itemImgs) {
+                clone.appendChild(sanitizeClone(extraImg));
+              }
+            }
+            const imgKey = itemImgs.length > 0 ? (itemImgs[0].getAttribute('src') || '').slice(-30) : '';
             results.push({
-              key: hashKey(subRole + '|' + text.slice(0, 300)),
+              key: hashKey(subRole + '|' + text.slice(0, 300) + '|' + imgKey),
               role: subRole,
               html: clone.innerHTML
             });
@@ -605,11 +779,20 @@
         continue;
       }
       const contentNode = findContentNode(item, cfg, role);
+      const itemImgs = [...item.querySelectorAll('img')].filter(isContentImage);
+      const nodeImgs = [...contentNode.querySelectorAll('img')].filter(isContentImage);
       const text = contentNode.textContent.trim();
-      if (!text && !contentNode.querySelector('img')) continue;
+      if (!text && itemImgs.length === 0 && nodeImgs.length === 0) continue;
+
       const clone = sanitizeClone(contentNode);
+      if (itemImgs.length > 0 && nodeImgs.length === 0) {
+        for (const extraImg of itemImgs) {
+          clone.appendChild(sanitizeClone(extraImg));
+        }
+      }
+      const imgKey = itemImgs.length > 0 ? (itemImgs[0].getAttribute('src') || '').slice(-30) : '';
       results.push({
-        key: hashKey(role + '|' + text.slice(0, 300)),
+        key: hashKey(role + '|' + text.slice(0, 300) + '|' + imgKey),
         role,
         html: clone.innerHTML
       });
@@ -715,9 +898,9 @@
       } catch (_) { /* noop */ }
     }
 
-    // 内部にテキストがあり、無効判定されなければ掘り下げて返す
+    // 内部にテキストまたは画像があり、無効判定されなければ掘り下げて返す
     const text = el.textContent.trim();
-    if (text.length > 0) {
+    if (text.length > 0 || el.querySelector('img')) {
       let target = el;
       while (target.children.length === 1 && target.firstElementChild && !isInvalidUserNode(target.firstElementChild, assistantEl, cfg, pageTitle)) {
         target = target.firstElementChild;
@@ -958,8 +1141,190 @@
       }
     }
 
+    // 抽出された全メッセージの画像をBase64形式でインライン埋め込み
+    if (ordered.length > 0) {
+      await embedImagesInMessages(ordered);
+    }
+
     // 取得順序の安全性チェック: user/assistantが交互でなくてもそのまま返す
     return ordered.slice(0, 800); // 安全上限
+  }
+
+  /**
+   * 画像をキャンバス経由でリサイズ・圧縮しBase64 Data URLに変換
+   * (印刷用A4に十分な最大1200px、JPEG品質0.82で容量爆発を防ぐ)
+   */
+  function imageToDataUrlViaCanvas(img, maxDim = 1200, quality = 0.82) {
+    try {
+      const canvas = document.createElement('canvas');
+      let width = img.naturalWidth || img.width || 0;
+      let height = img.naturalHeight || img.height || 0;
+      if (!width || !height) return null;
+
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      return canvas.toDataURL('image/jpeg', quality);
+    } catch (_) {
+      // CORS taint等で失敗した場合はnullを返す
+      return null;
+    }
+  }
+
+  /**
+   * URLからBlobを取得してData URLへ変換
+   */
+  async function fetchBlobToDataUrl(url) {
+    try {
+      const res = await fetch(url, { cache: 'force-cache' });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * 画像URLを安全なサイズのBase64 Data URLに変換
+   */
+  async function resolveImageAsBase64(liveImg, rawSrc) {
+    if (!rawSrc) return null;
+
+    let absUrl = rawSrc;
+    try {
+      absUrl = new URL(rawSrc, location.href).href;
+    } catch (_) {}
+
+    // 既にBase64の場合
+    if (absUrl.startsWith('data:image/')) {
+      // 巨大なBase64(400KB超等)でなければそのまま使用可能
+      if (absUrl.length < 400000) return absUrl;
+    }
+
+    // 1) ライブDOMのimg要素から直接Canvas描画を試行
+    if (liveImg) {
+      if (liveImg.complete && liveImg.naturalWidth > 0) {
+        const dataUrl = imageToDataUrlViaCanvas(liveImg);
+        if (dataUrl) return dataUrl;
+      } else {
+        // 画像読み込み完了を少し待機
+        await new Promise((resolve) => {
+          const done = () => resolve();
+          liveImg.addEventListener('load', done, { once: true });
+          liveImg.addEventListener('error', done, { once: true });
+          setTimeout(done, 1500);
+        });
+        if (liveImg.naturalWidth > 0) {
+          const dataUrl = imageToDataUrlViaCanvas(liveImg);
+          if (dataUrl) return dataUrl;
+        }
+      }
+    }
+
+    // 2) fetch による Blob 取得 (blob: URL や same-origin / CORS対応画像)
+    const fetchedDataUrl = await fetchBlobToDataUrl(absUrl);
+    if (fetchedDataUrl) {
+      // 一時Imageを作ってCanvasでリサイズ・最適化
+      try {
+        const tempImg = new Image();
+        tempImg.src = fetchedDataUrl;
+        await new Promise((resolve) => {
+          tempImg.onload = () => resolve();
+          tempImg.onerror = () => resolve();
+          setTimeout(resolve, 1500);
+        });
+        if (tempImg.naturalWidth > 0) {
+          const optimized = imageToDataUrlViaCanvas(tempImg);
+          if (optimized) return optimized;
+        }
+      } catch (_) {}
+      return fetchedDataUrl;
+    }
+
+    // 3) どうしても変換できなかった場合は元のURLをフォールバックとして残す
+    return absUrl;
+  }
+
+  /**
+   * 抽出された全メッセージの画像をBase64形式に一括変換
+   */
+  async function embedImagesInMessages(messages) {
+    // ページ上の既存img要素をsrcごとにマップ化(探索を高速化)
+    const pageImgsBySrc = new Map();
+    document.querySelectorAll('img').forEach((img) => {
+      const s = img.getAttribute('src');
+      if (s && !pageImgsBySrc.has(s)) {
+        pageImgsBySrc.set(s, img);
+      }
+      const cur = img.currentSrc;
+      if (cur && !pageImgsBySrc.has(cur)) {
+        pageImgsBySrc.set(cur, img);
+      }
+    });
+
+    // 変換結果キャッシュ (同一画像が複数箇所にあっても1回だけ変換)
+    const cache = new Map();
+
+    for (const m of messages) {
+      if (!m.html || !m.html.includes('<img')) continue;
+
+      const tpl = document.createElement('div');
+      tpl.innerHTML = m.html;
+      const imgs = [...tpl.querySelectorAll('img')];
+      let modified = false;
+
+      for (const img of imgs) {
+        if (!isContentImage(img)) {
+          img.remove();
+          modified = true;
+          continue;
+        }
+
+        const src = img.getAttribute('src');
+        if (!src) continue;
+
+        let base64 = cache.get(src);
+        if (!base64) {
+          const liveImg = pageImgsBySrc.get(src);
+          base64 = await resolveImageAsBase64(liveImg, src);
+          if (base64) {
+            cache.set(src, base64);
+          }
+        }
+
+        if (base64) {
+          img.setAttribute('src', base64);
+          img.removeAttribute('srcset');
+          img.removeAttribute('loading');
+          img.style.maxWidth = '100%';
+          img.style.height = 'auto';
+          img.style.borderRadius = '8px';
+          modified = true;
+        }
+      }
+
+      if (modified) {
+        m.html = tpl.innerHTML;
+      }
+    }
   }
 
   function getConversationTitle(cfg) {
@@ -967,13 +1332,16 @@
       try {
         if (sel === 'title') continue;
         const el = document.querySelector(sel);
-        if (el && el.textContent.trim()) return el.textContent.trim();
+        if (el) {
+          const val = (el.value || el.textContent || '').trim();
+          if (val) return val;
+        }
       } catch (_) { continue; }
     }
     const t = (document.title || '').trim();
     // "Kimi - 〜" や "〜 | Genspark" のようなサイト名プレフィックス・サフィックスを除去
-    return t.replace(/\s*[-|–]\s*(Kimi|Gemini|Claude|Google Gemini|Genspark|Genspark AI|ChatGPT|Grok|xAI)\s*$/i, '')
-            .replace(/^(Genspark|Genspark AI|Grok|xAI|Kimi)\s*[-|–]\s*/i, '') || t || 'AI会話';
+    return t.replace(/\s*[-|–]\s*(Kimi|Gemini|Gemini Notebook|NotebookLM|Claude|Google Gemini|Genspark|Genspark AI|ChatGPT|Grok|xAI)\s*$/i, '')
+            .replace(/^(Genspark|Genspark AI|Grok|xAI|Kimi|Gemini Notebook|NotebookLM)\s*[-|–]\s*/i, '') || t || 'AI会話';
   }
 
   // ---------------------------------------------------------------

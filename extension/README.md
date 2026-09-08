@@ -1,4 +1,4 @@
-# AI Chat to PDF (Kimi / Gemini / Claude / Genspark / ChatGPT / Grok)
+# AI Chat to PDF (Kimi / Gemini / Gemini Notebook / Claude / Genspark / ChatGPT / Grok)
 
 AIの会話を **数式のレイアウトを崩さずに** **PDF / HTML / テキスト** のいずれかに変換するChrome拡張機能（Manifest V3）です。
 
@@ -13,11 +13,12 @@ AIの会話を **数式のレイアウトを崩さずに** **PDF / HTML / テキ
 ## 対応サービス（優先順位順）
 
 1. **Kimi** (`kimi.ai`, `kimi.com`, `kimi.moonshot.cn`)
-2. **Gemini** (`gemini.google.com`)
-3. **Claude** (`claude.ai`)
-4. **Genspark** (`genspark.ai`)
-5. **ChatGPT** (`chatgpt.com`, `chat.openai.com`)
-6. **Grok** (`grok.com`, `x.com/i/grok`)
+2. **Gemini Notebook / NotebookLM** (`notebook.google.com`, `notebooklm.google.com`, `notebooklm.google`, `notebook.cloud.google.com`, `gemini.google.com/notebook`)
+3. **Gemini** (`gemini.google.com`)
+4. **Claude** (`claude.ai`)
+5. **Genspark** (`genspark.ai`)
+6. **ChatGPT** (`chatgpt.com`, `chat.openai.com`)
+7. **Grok** (`grok.com`, `x.com/i/grok`)
 
 ## 特徴
 
@@ -26,6 +27,10 @@ AIの会話を **数式のレイアウトを崩さずに** **PDF / HTML / テキ
   - エクスポートページでKaTeX公式CSS/フォント（CDN）を読み込み、`document.fonts.ready` でフォント適用完了を待ってから印刷します。
   - 印刷CSSで `.katex-display`・数式・コードブロック・表に `break-inside: avoid-page` を適用し、改ページでの切断も防ぎます。
 - **会話全体の自動抽出**: 仮想リスト（画面外メッセージがDOMから消える実装）に対応するため、スクロールコンテナを自動で遡りながら全会話を逐次収集・重複排除します。
+- **画像埋め込み対応 (Base64インライン化)**:
+  - ユーザーがアップロードした画像やAIが生成・出力した画像を抽出時に自動でBase64（Data URL）へと変換・インライン埋め込みします。
+  - セッション切れや認証期限切れによる「リンク切れ」を起こさず、ダウンロードした単一HTMLやPDF内で確実に表示・印刷できます。
+  - 最大幅1200pxに自動最適化することで、印刷品質を保ちつつファイルサイズ肥大化を防止します。
 - **クリーンな出力**: コピーボタン・アクションバー・フィードバックUI等のノイズを除去し、読みやすい白背景レイアウトでPDF化します。
 - **安全設計**: 抽出HTMLから `script` / `iframe` / イベントハンドラ / `javascript:` URL を二重にサニタイズ。取得データは `chrome.storage.session`（メモリ、タブ閉鎖で消滅）のみを使用し、外部送信は一切ありません。
 
