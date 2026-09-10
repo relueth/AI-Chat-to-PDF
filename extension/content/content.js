@@ -628,7 +628,7 @@
   }
 
   /**
-   * 要素ツリー内の画像の属性を正規化し、CSS background-image からも画像を復元
+   * 要素ツリー内の画像の属性を正規化 (src属性の補完)
    */
   function normalizeImages(root) {
     if (!root) return;
@@ -638,29 +638,159 @@
         img.setAttribute('src', s);
       }
     });
+  }
 
-    // background-image から画像要素を抽出
-    root.querySelectorAll('*').forEach((el) => {
-      if (el.tagName === 'IMG' || el.tagName === 'SVG' || el.closest(MATH_CONTAINER)) return;
-      const bg = el.style.backgroundImage || (typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(el).backgroundImage : '');
-      if (bg && bg.startsWith('url(') && !bg.includes('data:image/svg+xml')) {
-        const match = bg.match(/url\(['"]?(.*?)['"]?\)/);
-        if (match && match[1] && !match[1].startsWith('data:image/svg')) {
-          const url = match[1];
-          const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { width: 100, height: 100 };
-          if (rect.width > 40 && rect.height > 40 && !el.querySelector('img')) {
-            const img = document.createElement('img');
-            img.src = url;
-            img.setAttribute('src', url);
-            img.setAttribute('referrerpolicy', 'no-referrer');
-            img.style.maxWidth = '100%';
-            img.style.height = 'auto';
-            img.style.borderRadius = '8px';
-            el.appendChild(img);
-          }
+  /**
+   * CSS background-image URL を要素から取得 (ライブDOM専用)
+   * ※ 切り離されたクローンでは getComputedStyle / getBoundingClientRect が
+   *   機能しないため、必ずライブ要素に対して呼び出すこと。
+   */
+  function getBackgroundImageUrl(el) {
+    if (!el || el.nodeType !== 1) return '';
+    let bg = el.style ? (el.style.backgroundImage || '') : '';
+    if (!bg || bg === 'none') {
+      try {
+        bg = getComputedStyle(el).backgroundImage || '';
+      } catch (_) {
+        bg = '';
+      }
+    }
+    if (!bg || bg === 'none' || !bg.includes('url(') || bg.includes('data:image/svg')) return '';
+    const match = bg.match(/url\((['"]?)(.*?)\1\)/);
+    if (!match || !match[2] || match[2].startsWith('data:image/svg')) return '';
+    return match[2];
+  }
+
+  /**
+   * ライブDOMのbackground-imageをクローン側に<img>として復元する。
+   * cloneNode(true)直後の構造が一致していることを前提に並行ウォークで対応付ける。
+   * (従来はクローン側でgetComputedStyle/getBoundingClientRectを呼んでいたため
+   *  常に0x0となり、Geminiの添付画像プレビュー等が一切復元されなかったバグの修正)
+   */
+  function restoreBackgroundImages(liveRoot, cloneRoot) {
+    if (!liveRoot || !cloneRoot || liveRoot.nodeType !== 1) return;
+    let liveEls, cloneEls;
+    try {
+      liveEls = [liveRoot, ...liveRoot.querySelectorAll('*')];
+      cloneEls = [cloneRoot, ...cloneRoot.querySelectorAll('*')];
+    } catch (_) {
+      return;
+    }
+    if (liveEls.length !== cloneEls.length) return; // 構造不一致の安全弁
+    for (let i = 0; i < liveEls.length; i++) {
+      const el = liveEls[i];
+      if (el.tagName === 'IMG' || el.tagName === 'SVG' || el.tagName === 'svg') continue;
+      if (el.closest && el.closest(MATH_CONTAINER)) continue;
+      const url = getBackgroundImageUrl(el);
+      if (!url) continue;
+      let rect = { width: 0, height: 0 };
+      try { rect = el.getBoundingClientRect(); } catch (_) {}
+      if (rect.width <= 40 || rect.height <= 40) continue;
+      if (el.querySelector('img')) continue;
+      const img = document.createElement('img');
+      img.setAttribute('src', url);
+      img.setAttribute('referrerpolicy', 'no-referrer');
+      img.style.maxWidth = '100%';
+      img.style.height = 'auto';
+      img.style.borderRadius = '8px';
+      cloneEls[i].appendChild(img);
+    }
+  }
+
+  /**
+   * ライブDOMのスコープ内からコンテンツ画像URLを収集する。
+   * <img>要素に加え、CSS background-image で表示されている画像
+   * (Geminiの添付画像プレビュー等) も対象とする。
+   */
+  function collectContentImageSources(scopeEl, opts = {}) {
+    const srcs = [];
+    const seen = new Set();
+    if (!scopeEl || scopeEl.nodeType !== 1) return srcs;
+    const excludeSel = opts.excludeSelector || null;
+
+    const pushSrc = (s) => {
+      if (s && !s.startsWith('javascript:') && !seen.has(s)) {
+        seen.add(s);
+        srcs.push(s);
+      }
+    };
+
+    scopeEl.querySelectorAll('img').forEach((img) => {
+      try {
+        if (excludeSel && img.closest(excludeSel)) return;
+      } catch (_) {}
+      if (!isContentImage(img)) return;
+      pushSrc(getImageSourceUrl(img));
+    });
+
+    // background-image ベースの画像 (ライブDOMのみ計測可能)
+    scopeEl.querySelectorAll('*').forEach((el) => {
+      if (el.tagName === 'IMG' || el.tagName === 'SVG' || el.tagName === 'svg') return;
+      if (el.closest && el.closest(MATH_CONTAINER)) return;
+      try {
+        if (excludeSel && el.closest(excludeSel)) return;
+      } catch (_) {}
+      if (el.closest('[class*="avatar"], [class*="user-icon"], [class*="bot-icon"], nav, footer')) return;
+      const url = getBackgroundImageUrl(el);
+      if (!url) return;
+      let rect = { width: 0, height: 0 };
+      try { rect = el.getBoundingClientRect(); } catch (_) {}
+      if (rect.width <= 40 || rect.height <= 40) return;
+      if (el.querySelector('img')) return;
+      pushSrc(url);
+    });
+
+    return srcs;
+  }
+
+  /**
+   * クローンに含まれていないコンテンツ画像を、ライブDOM(item)から補完する。
+   * Gemini では添付画像のプレビューが本文ノード(query-text等)の外側、
+   * さらにターンコンテナ(user-queryの外)に配置される場合があるため、
+   * user発言に限りターンコンテナまで探索範囲を広げる(AI回答側の画像は除外)。
+   */
+  function appendMissingImages(clone, item, cfg, role) {
+    if (!clone || !item) return 0;
+    const existing = new Set(
+      [...clone.querySelectorAll('img')]
+        .map((img) => getImageSourceUrl(img) || img.getAttribute('src'))
+        .filter(Boolean)
+    );
+
+    const srcs = collectContentImageSources(item);
+
+    // Gemini系: 添付ファイルプレビューが user-query 要素の外にあるケースへの対応
+    if (role === 'user' && cfg && (cfg.id === 'gemini' || cfg.id === 'gemini-notebook')) {
+      const turn = item.closest(
+        '.conversation-container, [class*="conversation-container"], [class*="conversation-turn"], [class*="chat-history"] > *'
+      );
+      if (turn && turn !== item) {
+        const extra = collectContentImageSources(turn, {
+          excludeSelector: 'model-response, [class*="model-response"], [class*="response-container"], message-content'
+        });
+        for (const s of extra) {
+          if (!srcs.includes(s)) srcs.push(s);
         }
       }
-    });
+    }
+
+    let appended = 0;
+    for (const s of srcs) {
+      if (existing.has(s)) continue;
+      existing.add(s);
+      const img = document.createElement('img');
+      img.setAttribute('src', s);
+      img.setAttribute('referrerpolicy', 'no-referrer');
+      img.setAttribute('loading', 'eager');
+      img.style.maxWidth = '100%';
+      img.style.height = 'auto';
+      img.style.borderRadius = '8px';
+      img.style.display = 'block';
+      img.style.margin = '10px 0';
+      clone.appendChild(img);
+      appended++;
+    }
+    return appended;
   }
 
   const REMOVE_SELECTORS = [
@@ -694,6 +824,9 @@
 
   function sanitizeClone(root) {
     const clone = root.cloneNode(true);
+    // background-image で表示されている画像は、切り離されたクローン側では
+    // 検出できない(computed styleが空になる)ため、ライブDOMを参照して復元する
+    restoreBackgroundImages(root, clone);
     normalizeImages(clone);
 
     // Gemini Notebook / NotebookLM の引用・出典番号バッジ(ボタン形式)を保持してsup要素に変換
@@ -888,10 +1021,7 @@
           for (const sub of subItems) {
             const subRole = sub === userEl ? 'user' : 'assistant';
             const contentNode = findContentNode(sub, cfg, subRole);
-            const itemImgs = [...sub.querySelectorAll('img')].filter(isContentImage);
-            const nodeImgs = [...contentNode.querySelectorAll('img')].filter(isContentImage);
             const text = contentNode.textContent.trim();
-            if (!text && itemImgs.length === 0 && nodeImgs.length === 0) continue;
 
             let clone;
             if (contentNode.tagName === 'IMG') {
@@ -901,17 +1031,13 @@
               clone = sanitizeClone(contentNode);
             }
 
-            if (itemImgs.length > 0) {
-              const existingSrcs = new Set([...clone.querySelectorAll('img')].map(getImageSourceUrl).filter(Boolean));
-              for (const extraImg of itemImgs) {
-                const s = getImageSourceUrl(extraImg);
-                if (s && !existingSrcs.has(s)) {
-                  existingSrcs.add(s);
-                  clone.appendChild(sanitizeClone(extraImg));
-                }
-              }
-            }
-            const imgKey = itemImgs.length > 0 ? (itemImgs[0].getAttribute('src') || '').slice(-30) : '';
+            // 本文ノード外の添付画像・background-image画像を補完
+            appendMissingImages(clone, sub, cfg, subRole);
+
+            const cloneImgs = [...clone.querySelectorAll('img')];
+            if (!text && cloneImgs.length === 0) continue;
+
+            const imgKey = cloneImgs.length > 0 ? (cloneImgs[0].getAttribute('src') || '').slice(-30) : '';
             const htmlContent = clone.innerHTML.trim() || (clone.tagName === 'IMG' ? clone.outerHTML : '');
             results.push({
               key: hashKey(subRole + '|' + text.slice(0, 300) + '|' + imgKey),
@@ -928,10 +1054,7 @@
         continue;
       }
       const contentNode = findContentNode(item, cfg, role);
-      const itemImgs = [...item.querySelectorAll('img')].filter(isContentImage);
-      const nodeImgs = [...contentNode.querySelectorAll('img')].filter(isContentImage);
       const text = contentNode.textContent.trim();
-      if (!text && itemImgs.length === 0 && nodeImgs.length === 0) continue;
 
       let clone;
       if (contentNode.tagName === 'IMG') {
@@ -941,17 +1064,13 @@
         clone = sanitizeClone(contentNode);
       }
 
-      if (itemImgs.length > 0) {
-        const existingSrcs = new Set([...clone.querySelectorAll('img')].map(getImageSourceUrl).filter(Boolean));
-        for (const extraImg of itemImgs) {
-          const s = getImageSourceUrl(extraImg);
-          if (s && !existingSrcs.has(s)) {
-            existingSrcs.add(s);
-            clone.appendChild(sanitizeClone(extraImg));
-          }
-        }
-      }
-      const imgKey = itemImgs.length > 0 ? (itemImgs[0].getAttribute('src') || '').slice(-30) : '';
+      // 本文ノード外の添付画像・background-image画像を補完
+      appendMissingImages(clone, item, cfg, role);
+
+      const cloneImgs = [...clone.querySelectorAll('img')];
+      if (!text && cloneImgs.length === 0) continue;
+
+      const imgKey = cloneImgs.length > 0 ? (cloneImgs[0].getAttribute('src') || '').slice(-30) : '';
       const htmlContent = clone.innerHTML.trim() || (clone.tagName === 'IMG' ? clone.outerHTML : '');
       results.push({
         key: hashKey(role + '|' + text.slice(0, 300) + '|' + imgKey),
@@ -1157,6 +1276,7 @@
         const uKey = hashKey('user|' + userText.slice(0, 300));
         if (uKey !== lastUserKey && userText.length > 0) {
           const userClone = sanitizeClone(userNode);
+          appendMissingImages(userClone, userEl, cfg, 'user');
           results.push({ key: uKey, role: 'user', html: userClone.innerHTML });
           lastUserKey = uKey;
         }
