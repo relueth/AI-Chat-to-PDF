@@ -191,6 +191,17 @@ body {
   text-decoration: none;
 }
 
+/* 添付ファイル・プレビュー内の画像は縮小されず綺麗に表示 */
+.msg-body [class*="attachment"] img,
+.msg-body [class*="file-"] img,
+.msg-body [class*="preview"] img {
+  max-width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+  display: block;
+  margin: 6px 0;
+}
+
 /* 添付ファイル内部の縦線・仕切り線の消去 (ChatGPTの添付ファイルの中央縦線対策) */
 .msg-body [class*="attachment"] [class*="w-px"],
 .msg-body [class*="attachment"] [class*="border-l"],

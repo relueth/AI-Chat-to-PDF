@@ -6,6 +6,10 @@
 (() => {
   'use strict';
 
+  // 抽出プロセス全体で共有する画像Base64キャッシュおよびライブDOM画像要素マップ
+  const IMAGE_BASE64_CACHE = new Map();
+  const LIVE_ELEMENT_IMAGE_MAP = new Map();
+
   // ---------------------------------------------------------------
   // サイト別設定 (優先順位: Kimi > Gemini > Claude)
   // ---------------------------------------------------------------
@@ -177,12 +181,21 @@
         '[data-role="model"]',
         '[data-role="assistant"]',
         '[class*="turn-container"]',
-        '[class*="conversation-turn"]'
+        '[class*="conversation-turn"]',
+        '[class*="conversation-container"]',
+        '[class*="user-query-container"]',
+        'div.user-query-container'
       ],
       userMatch: [
         'user-query',
         '[class*="user-query"]',
-        '[data-role="user"]'
+        '[data-role="user"]',
+        '[class*="user-prompt"]',
+        '[class*="query-container"]',
+        '[class*="user-query-container"]',
+        '[data-test-id*="user-query"]',
+        '[data-test-id*="luminous-collapsed-bubble"]',
+        '[class*="user-query-bubble"]'
       ],
       assistantMatch: [
         'model-response',
@@ -193,9 +206,11 @@
       contentSelectors: [
         'message-content',
         '[class*="message-content"]',
+        '[class*="user-query-container"]',
         '.query-content',
         '[class*="query-content"]',
-        '[class*="user-query-container"]',
+        '[data-test-id*="luminous-collapsed-bubble"]',
+        '[class*="user-query-bubble"]',
         '.query-text',
         '[class*="query-text"]',
         '.markdown.markdown-main-panel',
@@ -204,17 +219,26 @@
         '[class*="image-container"]',
         '[class*="media-carousel"]',
         'generated-image',
-        'image-viewer'
+        'image-viewer',
+        '[class*="attachment"]',
+        '[class*="file-preview"]',
+        '[class*="image-preview"]'
       ],
       userContentSelectors: [
-        '.query-content',
-        '[class*="query-content"]',
         '[class*="user-query-container"]',
         'div.user-query-container',
+        '.query-content',
+        '[class*="query-content"]',
+        '[data-test-id*="luminous-collapsed-bubble"]',
+        '[class*="user-query-bubble"]',
         '.query-text',
         '[class*="query-text"]',
         '[class*="attachment"]',
+        '[class*="file-preview"]',
+        '[class*="file-chip"]',
+        '[class*="image-preview"]',
         '[class*="image-container"]',
+        '[class*="user-prompt"]',
         'user-query'
       ],
       assistantContentSelectors: [
@@ -597,31 +621,52 @@
    */
   function isContentImage(img) {
     if (!img) return false;
-    // 祖先要素による除外: アバター、UIアクションバー、ナビ等(ヘッダーはプロンプトを含む場合があるため除外しない)
-    if (img.closest(
-      '[class*="avatar"], [class*="user-icon"], [class*="bot-icon"], ' +
-      '[class*="author-avatar"], [class*="account-circle"], nav, footer'
-    )) {
-      return false;
+
+    // 添付ファイル・プレビュー・ユーザープロンプト内の画像はアバター除外判定をバイパス
+    const isAttachmentOrContent = !!img.closest(
+      '[class*="attachment"], [class*="preview"], [class*="file"], [class*="upload"], ' +
+      '[class*="image"], [class*="thumbnail"], [class*="media"], [class*="card"], ' +
+      'user-query, [class*="user-query"], [data-test-id*="collapsed-bubble"], [class*="query-bubble"]'
+    );
+
+    if (!isAttachmentOrContent) {
+      // 祖先要素による除外: アバター、ナビ、フッター等 (user-iconではなくuser-avatar/bot-avatarに限定)
+      if (img.closest(
+        '[class*="avatar"], [class*="user-avatar"], [class*="bot-avatar"], ' +
+        '[class*="author-avatar"], [class*="account-circle"], nav, footer'
+      )) {
+        return false;
+      }
+      const alt = (img.getAttribute('alt') || '').toLowerCase();
+      // アバター専用の明確な文字列のみ除外
+      if (/(user avatar|assistant avatar|bot avatar|author avatar|profile avatar|account icon)/i.test(alt)) {
+        return false;
+      }
     }
-    const alt = (img.getAttribute('alt') || '').toLowerCase();
-    // アバター専用の明確な文字列のみ除外(「profile photo of cat」等の生成プロンプト画像を除外しない)
-    if (/(user avatar|assistant avatar|bot avatar|author avatar|profile avatar|account icon)/i.test(alt)) {
-      return false;
-    }
+
     const src = getImageSourceUrl(img);
     if (!src || src.startsWith('javascript:')) return false;
 
-    // 1x1 トラッキングピクセル等の除外
-    if ((img.naturalWidth === 1 && img.naturalHeight === 1) || (img.width === 1 && img.height === 1)) {
-      return false;
-    }
+    // 添付ファイルや明示的コンテンツ画像(blob:, data:, googleusercontent, 添付カード内等)は寸法で除外しない
+    const isExplicitContent = isAttachmentOrContent ||
+      src.startsWith('blob:') ||
+      src.startsWith('data:image/') ||
+      src.includes('googleusercontent.com') ||
+      src.includes('content.googleapis.com') ||
+      src.includes('storage.googleapis.com');
 
-    // 極小アイコン (24px以下) の除外 (明示的な寸法がある場合)
-    const w = img.naturalWidth || img.width;
-    const h = img.naturalHeight || img.height;
-    if (w > 0 && h > 0 && w <= 24 && h <= 24) {
-      return false;
+    if (!isExplicitContent) {
+      // 1x1 トラッキングピクセル等の除外
+      if ((img.naturalWidth === 1 && img.naturalHeight === 1) || (img.width === 1 && img.height === 1)) {
+        return false;
+      }
+
+      // 極小アイコン (20px以下) の除外 (明示的な寸法がある場合)
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      if (w > 0 && h > 0 && w <= 20 && h <= 20) {
+        return false;
+      }
     }
 
     return true;
@@ -642,21 +687,24 @@
     // background-image から画像要素を抽出
     root.querySelectorAll('*').forEach((el) => {
       if (el.tagName === 'IMG' || el.tagName === 'SVG' || el.closest(MATH_CONTAINER)) return;
-      const bg = el.style.backgroundImage || (typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(el).backgroundImage : '');
-      if (bg && bg.startsWith('url(') && !bg.includes('data:image/svg+xml')) {
-        const match = bg.match(/url\(['"]?(.*?)['"]?\)/);
-        if (match && match[1] && !match[1].startsWith('data:image/svg')) {
-          const url = match[1];
-          const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { width: 100, height: 100 };
-          if (rect.width > 40 && rect.height > 40 && !el.querySelector('img')) {
+      const bg = el.style ? (el.style.backgroundImage || '') : '';
+      if (bg && bg !== 'none' && !bg.includes('data:image/svg+xml')) {
+        const matches = bg.matchAll(/url\(['"]?(https?:\/\/[^'")\s]+|blob:[^'")\s]+|data:image\/[^'")\s]+)['"]?\)/gi);
+        for (const m of matches) {
+          const url = m[1];
+          if (url && !url.includes('avatar') && !url.includes('icon') && !el.querySelector('img')) {
             const img = document.createElement('img');
             img.src = url;
             img.setAttribute('src', url);
             img.setAttribute('referrerpolicy', 'no-referrer');
+            img.setAttribute('loading', 'eager');
             img.style.maxWidth = '100%';
             img.style.height = 'auto';
             img.style.borderRadius = '8px';
+            img.style.display = 'block';
+            img.style.margin = '10px 0';
             el.appendChild(img);
+            break;
           }
         }
       }
@@ -693,6 +741,9 @@
   ];
 
   function sanitizeClone(root) {
+    // ライブ要素側で画像URLを属性に書き込んでクローン時の脱落を防止
+    normalizeImages(root);
+
     const clone = root.cloneNode(true);
     normalizeImages(clone);
 
@@ -707,18 +758,59 @@
       }
     });
 
-    // REMOVE_SELECTORS の要素を処理: コンテンツ画像を含んでいる場合は画像を救出して要素のみ除去
+    // REMOVE_SELECTORS の要素を処理: 添付ファイルや画像を含む場合は画像を保護・救出
     clone.querySelectorAll(REMOVE_SELECTORS.join(', ')).forEach((el) => {
       if (el.closest(MATH_CONTAINER)) return;
+      if (el.tagName === 'IMG') return; // imgタグ自体は絶対に除去しない
 
-      const imgs = [...el.querySelectorAll('img')].filter(isContentImage);
-      if (imgs.length > 0) {
+      // 添付・メディア・画像・カード要素の場合はボタン属性のみ解除して要素と中身を保護
+      if (el.matches('[class*="attachment"], [class*="thumbnail"], [class*="preview"], [class*="image"], [class*="file"], [class*="chip"], [class*="media"], [class*="upload"], [class*="card"]')) {
+        el.removeAttribute('role');
+        el.removeAttribute('tabindex');
+        el.removeAttribute('aria-label');
+        if (el.tagName === 'BUTTON') {
+          const div = document.createElement('div');
+          while (el.firstChild) div.appendChild(el.firstChild);
+          el.replaceWith(div);
+        }
+        return;
+      }
+
+      // 要素内の画像（img, canvas, background-image）を救出
+      const rescued = [];
+      el.querySelectorAll('img').forEach((img) => {
+        const s = getImageSourceUrl(img);
+        if (s && !s.includes('avatar') && !s.includes('account_circle')) {
+          const newImg = document.createElement('img');
+          newImg.setAttribute('src', s);
+          newImg.setAttribute('loading', 'eager');
+          newImg.style.maxWidth = '100%';
+          newImg.style.height = 'auto';
+          newImg.style.borderRadius = '8px';
+          newImg.style.display = 'block';
+          newImg.style.margin = '10px 0';
+          rescued.push(newImg);
+        }
+      });
+      el.querySelectorAll('*').forEach((sub) => {
+        const bg = sub.style ? sub.style.backgroundImage : '';
+        const m = bg.match(/url\(['"]?(https?:\/\/[^'")\s]+|blob:[^'")\s]+|data:image\/[^'")\s]+)['"]?\)/i);
+        if (m && m[1] && !m[1].includes('avatar') && !m[1].includes('account_circle')) {
+          const newImg = document.createElement('img');
+          newImg.setAttribute('src', m[1]);
+          newImg.setAttribute('loading', 'eager');
+          newImg.style.maxWidth = '100%';
+          newImg.style.height = 'auto';
+          newImg.style.borderRadius = '8px';
+          newImg.style.display = 'block';
+          newImg.style.margin = '10px 0';
+          rescued.push(newImg);
+        }
+      });
+
+      if (rescued.length > 0) {
         const frag = document.createDocumentFragment();
-        imgs.forEach((img) => {
-          const s = getImageSourceUrl(img);
-          if (s) img.setAttribute('src', s);
-          frag.appendChild(img);
-        });
+        rescued.forEach((r) => frag.appendChild(r));
         el.replaceWith(frag);
       } else {
         el.remove();
@@ -860,6 +952,289 @@
     return item;
   }
 
+  /**
+   * 要素ツリー(Shadow DOM含む)の全要素を走査
+   */
+  function getAllElementsWithShadow(root) {
+    const list = [];
+    const queue = [root];
+    while (queue.length > 0) {
+      const el = queue.shift();
+      if (!el || el.nodeType !== 1) continue;
+      list.push(el);
+      if (el.shadowRoot) {
+        for (const child of el.shadowRoot.children) {
+          queue.push(child);
+        }
+      }
+      for (const child of el.children) {
+        queue.push(child);
+      }
+    }
+    return list;
+  }
+
+  /**
+   * ライブDOM要素から画像(img, background-image, canvas, svg image)を網羅的に抽出し、
+   * 読み込み完了しているものは即座にCanvas経由でBase64化する
+   */
+  function extractLiveImages(root, role = 'user') {
+    if (!root) return [];
+    const collected = [];
+    const seenSrcs = new Set();
+    const all = getAllElementsWithShadow(root);
+
+    for (const el of all) {
+      if (el.closest && el.closest(MATH_CONTAINER)) continue;
+      // ユーザー発言探索時、AI応答コンテナ内の画像は誤取得しない
+      if (role === 'user' && el.closest && el.closest('model-response, [class*="model-response"], [data-role="model"], [data-role="assistant"], .markdown-body, [class*="markdown"]')) {
+        continue;
+      }
+
+      // 1. img要素
+      if (el.tagName === 'IMG') {
+        if (!isContentImage(el)) continue;
+        const src = getImageSourceUrl(el);
+        if (!src || seenSrcs.has(src)) continue;
+        seenSrcs.add(src);
+
+        // ライブDOMで既に読み込み完了していれば即座にBase64化
+        let b64 = IMAGE_BASE64_CACHE.get(src) || IMAGE_BASE64_CACHE.get(el.src) || null;
+        if (!b64 && el.complete && (el.naturalWidth > 0 || el.width > 0)) {
+          b64 = imageToDataUrlViaCanvas(el);
+          if (b64) {
+            IMAGE_BASE64_CACHE.set(src, b64);
+            if (el.src) IMAGE_BASE64_CACHE.set(el.src, b64);
+          }
+        }
+        LIVE_ELEMENT_IMAGE_MAP.set(src, el);
+        if (el.src) LIVE_ELEMENT_IMAGE_MAP.set(el.src, el);
+        collected.push({ el, src: b64 || src, base64: b64 });
+        continue;
+      }
+
+      // 2. canvas 要素
+      if (el.tagName === 'CANVAS') {
+        const w = el.width || el.clientWidth || 0;
+        const h = el.height || el.clientHeight || 0;
+        if (w > 20 && h > 20) {
+          try {
+            const dataUrl = el.toDataURL('image/jpeg', 0.85);
+            if (dataUrl && !seenSrcs.has(dataUrl)) {
+              seenSrcs.add(dataUrl);
+              const syntheticImg = document.createElement('img');
+              syntheticImg.setAttribute('src', dataUrl);
+              syntheticImg.setAttribute('loading', 'eager');
+              syntheticImg.style.maxWidth = '100%';
+              syntheticImg.style.height = 'auto';
+              syntheticImg.style.borderRadius = '8px';
+              syntheticImg.style.display = 'block';
+              IMAGE_BASE64_CACHE.set(dataUrl, dataUrl);
+              collected.push({ el: syntheticImg, src: dataUrl, base64: dataUrl });
+            }
+          } catch (_) {}
+        }
+        continue;
+      }
+
+      // 3. SVG image 要素
+      if (el.tagName && el.tagName.toLowerCase() === 'image') {
+        const src = el.getAttribute('href') || el.getAttribute('xlink:href') || el.getAttribute('src');
+        if (src && !seenSrcs.has(src) && !src.includes('avatar') && !src.includes('icon')) {
+          seenSrcs.add(src);
+          const syntheticImg = document.createElement('img');
+          syntheticImg.setAttribute('src', src);
+          syntheticImg.setAttribute('loading', 'eager');
+          syntheticImg.style.maxWidth = '100%';
+          syntheticImg.style.height = 'auto';
+          syntheticImg.style.borderRadius = '8px';
+          syntheticImg.style.display = 'block';
+          collected.push({ el: syntheticImg, src, base64: null });
+        }
+        continue;
+      }
+
+      // 4. CSS background-image (inline, computed, ::before, ::after)
+      if (typeof window !== 'undefined' && window.getComputedStyle) {
+        let bgs = [el.style ? el.style.backgroundImage : ''];
+        try {
+          const cs = window.getComputedStyle(el);
+          if (cs && cs.backgroundImage) bgs.push(cs.backgroundImage);
+          const csBefore = window.getComputedStyle(el, '::before');
+          if (csBefore && csBefore.backgroundImage) bgs.push(csBefore.backgroundImage);
+          const csAfter = window.getComputedStyle(el, '::after');
+          if (csAfter && csAfter.backgroundImage) bgs.push(csAfter.backgroundImage);
+        } catch (_) {}
+
+        for (const bg of bgs) {
+          if (!bg || bg === 'none') continue;
+          const matches = bg.matchAll(/url\(['"]?(https?:\/\/[^'")\s]+|blob:[^'")\s]+|data:image\/[^'")\s]+)['"]?\)/gi);
+          for (const m of matches) {
+            const url = m[1];
+            if (!url || seenSrcs.has(url) || url.includes('data:image/svg')) continue;
+            if (url.includes('avatar') || url.includes('account_circle') || url.includes('profile')) continue;
+
+            const isExplicit = url.startsWith('blob:') || url.startsWith('data:image/') || url.includes('googleusercontent.com');
+            const w = el.offsetWidth || el.clientWidth || 0;
+            const h = el.offsetHeight || el.clientHeight || 0;
+            if (isExplicit || (w > 20 && h > 20) || (w === 0 && h === 0)) {
+              seenSrcs.add(url);
+              const syntheticImg = document.createElement('img');
+              syntheticImg.setAttribute('src', url);
+              syntheticImg.setAttribute('loading', 'eager');
+              syntheticImg.setAttribute('referrerpolicy', 'no-referrer');
+              syntheticImg.style.maxWidth = '100%';
+              syntheticImg.style.height = 'auto';
+              syntheticImg.style.borderRadius = '8px';
+              syntheticImg.style.display = 'block';
+              syntheticImg.style.margin = '10px 0';
+              LIVE_ELEMENT_IMAGE_MAP.set(url, syntheticImg);
+              collected.push({ el: syntheticImg, src: url, base64: null });
+            }
+          }
+        }
+      }
+
+      // 5. カスタム属性 (data-src, data-url, image-url, preview-url 等)
+      if (el.matches && el.matches('[class*="attachment"], [class*="thumbnail"], [class*="preview"], [class*="image"], [class*="file"], [class*="media"], [class*="upload"], [class*="card"]')) {
+        const customUrl = el.getAttribute('data-src') || el.getAttribute('data-url') || el.getAttribute('image-url') || el.getAttribute('preview-url') || el.getAttribute('data-thumbnail');
+        if (customUrl && !seenSrcs.has(customUrl) && (customUrl.startsWith('http') || customUrl.startsWith('blob:') || customUrl.startsWith('data:'))) {
+          seenSrcs.add(customUrl);
+          const syntheticImg = document.createElement('img');
+          syntheticImg.setAttribute('src', customUrl);
+          syntheticImg.setAttribute('loading', 'eager');
+          syntheticImg.style.maxWidth = '100%';
+          syntheticImg.style.height = 'auto';
+          syntheticImg.style.borderRadius = '8px';
+          syntheticImg.style.display = 'block';
+          LIVE_ELEMENT_IMAGE_MAP.set(customUrl, syntheticImg);
+          collected.push({ el: syntheticImg, src: customUrl, base64: null });
+        }
+      }
+    }
+
+    return collected;
+  }
+
+  /**
+   * 単一メッセージ要素からテキストと画像を抽出し、正規化クローンを生成
+   */
+  function processMessageItem(targetEl, role, cfg, contextContainer = null) {
+    const contentNode = findContentNode(targetEl, cfg, role);
+    const candidateRoots = [targetEl];
+
+    // ユーザー発言の場合、親コンテナや近傍の添付ファイル要素も画像探索対象に含める
+    if (role === 'user') {
+      // 1. 親コンテナを遡ってターン全体を含める
+      let cur = targetEl.parentElement;
+      for (let i = 0; i < 5 && cur && cur !== document.body; i++) {
+        if (!candidateRoots.includes(cur)) candidateRoots.push(cur);
+        if (cur.matches('[class*="turn"], [class*="conversation-container"], [class*="conversation-turn"], [class*="message-container"]')) {
+          break;
+        }
+        cur = cur.parentElement;
+      }
+      if (contextContainer && !candidateRoots.includes(contextContainer)) {
+        candidateRoots.push(contextContainer);
+      }
+
+      // 2. targetEl および親要素の兄弟要素を探索
+      const checkSiblings = (el) => {
+        if (!el) return;
+        let sib = el.previousElementSibling;
+        let c = 0;
+        while (sib && c++ < 6) {
+          if (!candidateRoots.includes(sib)) candidateRoots.push(sib);
+          sib = sib.previousElementSibling;
+        }
+        sib = el.nextElementSibling;
+        c = 0;
+        while (sib && c++ < 6) {
+          if (!candidateRoots.includes(sib)) candidateRoots.push(sib);
+          sib = sib.nextElementSibling;
+        }
+      };
+      checkSiblings(targetEl);
+      if (targetEl.parentElement) checkSiblings(targetEl.parentElement);
+    }
+
+    // ライブDOMから画像を網羅抽出
+    const allExtractedImages = [];
+    const seenUrlsInTurn = new Set();
+    for (const rootEl of candidateRoots) {
+      const list = extractLiveImages(rootEl, role);
+      for (const itemImg of list) {
+        if (!seenUrlsInTurn.has(itemImg.src)) {
+          seenUrlsInTurn.add(itemImg.src);
+          allExtractedImages.push(itemImg);
+        }
+      }
+    }
+
+    const text = contentNode ? contentNode.textContent.trim() : '';
+    if (!text && allExtractedImages.length === 0) return null;
+
+    let clone;
+    if (contentNode && contentNode.tagName === 'IMG') {
+      clone = document.createElement('div');
+      clone.appendChild(sanitizeClone(contentNode));
+    } else if (contentNode) {
+      clone = sanitizeClone(contentNode);
+    } else {
+      clone = document.createElement('div');
+    }
+
+    // 抽出された画像を clone に確実に追加
+    if (allExtractedImages.length > 0) {
+      const existingSrcs = new Set(
+        [...clone.querySelectorAll('img')].map(getImageSourceUrl).filter(Boolean)
+      );
+      for (const ext of allExtractedImages) {
+        const s = ext.base64 || ext.src;
+        if (s) {
+          // すでにclone内に同じ画像が存在する場合はBase64に差し替えて完了
+          let alreadyInClone = false;
+          clone.querySelectorAll('img').forEach((img) => {
+            const cur = getImageSourceUrl(img);
+            if (cur === s || cur === ext.src) {
+              alreadyInClone = true;
+              if (ext.base64) img.setAttribute('src', ext.base64);
+            }
+          });
+
+          if (!alreadyInClone && !existingSrcs.has(s) && !existingSrcs.has(ext.src)) {
+            existingSrcs.add(s);
+            const imgEl = ext.el.cloneNode(true);
+            imgEl.setAttribute('src', s);
+            imgEl.setAttribute('loading', 'eager');
+            imgEl.setAttribute('referrerpolicy', 'no-referrer');
+            imgEl.removeAttribute('srcset');
+            imgEl.style.maxWidth = '100%';
+            imgEl.style.height = 'auto';
+            imgEl.style.borderRadius = '8px';
+            imgEl.style.display = 'block';
+            imgEl.style.margin = '10px 0';
+
+            if (role === 'user') {
+              // ユーザー発言の場合、添付画像は質問文の前に配置（チャットUIの表示順序と一致）
+              clone.prepend(imgEl);
+            } else {
+              clone.appendChild(imgEl);
+            }
+          }
+        }
+      }
+    }
+
+    const imgKey = allExtractedImages.length > 0 ? (allExtractedImages[0].src || '').slice(-30) : '';
+    const htmlContent = clone.innerHTML.trim() || (clone.tagName === 'IMG' ? clone.outerHTML : '');
+    return {
+      key: hashKey(role + '|' + text.slice(0, 300) + '|' + imgKey),
+      role,
+      html: htmlContent
+    };
+  }
+
   function extractFromElements(cfg) {
     let items = queryAllAny(document, cfg.itemSelectors);
     items = filterOutermost(items);
@@ -887,37 +1262,8 @@
           });
           for (const sub of subItems) {
             const subRole = sub === userEl ? 'user' : 'assistant';
-            const contentNode = findContentNode(sub, cfg, subRole);
-            const itemImgs = [...sub.querySelectorAll('img')].filter(isContentImage);
-            const nodeImgs = [...contentNode.querySelectorAll('img')].filter(isContentImage);
-            const text = contentNode.textContent.trim();
-            if (!text && itemImgs.length === 0 && nodeImgs.length === 0) continue;
-
-            let clone;
-            if (contentNode.tagName === 'IMG') {
-              clone = document.createElement('div');
-              clone.appendChild(sanitizeClone(contentNode));
-            } else {
-              clone = sanitizeClone(contentNode);
-            }
-
-            if (itemImgs.length > 0) {
-              const existingSrcs = new Set([...clone.querySelectorAll('img')].map(getImageSourceUrl).filter(Boolean));
-              for (const extraImg of itemImgs) {
-                const s = getImageSourceUrl(extraImg);
-                if (s && !existingSrcs.has(s)) {
-                  existingSrcs.add(s);
-                  clone.appendChild(sanitizeClone(extraImg));
-                }
-              }
-            }
-            const imgKey = itemImgs.length > 0 ? (itemImgs[0].getAttribute('src') || '').slice(-30) : '';
-            const htmlContent = clone.innerHTML.trim() || (clone.tagName === 'IMG' ? clone.outerHTML : '');
-            results.push({
-              key: hashKey(subRole + '|' + text.slice(0, 300) + '|' + imgKey),
-              role: subRole,
-              html: htmlContent
-            });
+            const msg = processMessageItem(sub, subRole, cfg, item);
+            if (msg) results.push(msg);
           }
           continue;
         }
@@ -927,37 +1273,8 @@
         // 判定できない場合はスキップ(ヘッダ等の誤検出防止)
         continue;
       }
-      const contentNode = findContentNode(item, cfg, role);
-      const itemImgs = [...item.querySelectorAll('img')].filter(isContentImage);
-      const nodeImgs = [...contentNode.querySelectorAll('img')].filter(isContentImage);
-      const text = contentNode.textContent.trim();
-      if (!text && itemImgs.length === 0 && nodeImgs.length === 0) continue;
-
-      let clone;
-      if (contentNode.tagName === 'IMG') {
-        clone = document.createElement('div');
-        clone.appendChild(sanitizeClone(contentNode));
-      } else {
-        clone = sanitizeClone(contentNode);
-      }
-
-      if (itemImgs.length > 0) {
-        const existingSrcs = new Set([...clone.querySelectorAll('img')].map(getImageSourceUrl).filter(Boolean));
-        for (const extraImg of itemImgs) {
-          const s = getImageSourceUrl(extraImg);
-          if (s && !existingSrcs.has(s)) {
-            existingSrcs.add(s);
-            clone.appendChild(sanitizeClone(extraImg));
-          }
-        }
-      }
-      const imgKey = itemImgs.length > 0 ? (itemImgs[0].getAttribute('src') || '').slice(-30) : '';
-      const htmlContent = clone.innerHTML.trim() || (clone.tagName === 'IMG' ? clone.outerHTML : '');
-      results.push({
-        key: hashKey(role + '|' + text.slice(0, 300) + '|' + imgKey),
-        role,
-        html: htmlContent
-      });
+      const msg = processMessageItem(item, role, cfg, null);
+      if (msg) results.push(msg);
     }
     return results;
   }
@@ -1152,22 +1469,16 @@
     for (const aiEl of aiBlocks) {
       const userEl = findUserCandidate(aiEl, cfg, pageTitle);
       if (userEl) {
-        const userNode = findContentNode(userEl, cfg, 'user');
-        const userText = userNode.textContent.trim();
-        const uKey = hashKey('user|' + userText.slice(0, 300));
-        if (uKey !== lastUserKey && userText.length > 0) {
-          const userClone = sanitizeClone(userNode);
-          results.push({ key: uKey, role: 'user', html: userClone.innerHTML });
-          lastUserKey = uKey;
+        const userMsg = processMessageItem(userEl, 'user', cfg, null);
+        if (userMsg && userMsg.key !== lastUserKey) {
+          results.push(userMsg);
+          lastUserKey = userMsg.key;
         }
       }
-      const aiClone = sanitizeClone(aiEl);
-      const aiText = aiEl.textContent.trim();
-      results.push({
-        key: hashKey('assistant|' + aiText.slice(0, 300)),
-        role: 'assistant',
-        html: aiClone.innerHTML
-      });
+      const aiMsg = processMessageItem(aiEl, 'assistant', cfg, null);
+      if (aiMsg) {
+        results.push(aiMsg);
+      }
     }
 
     return results;
@@ -1350,7 +1661,8 @@
    */
   async function fetchBlobToDataUrl(url) {
     try {
-      const res = await fetch(url, { cache: 'force-cache' });
+      const options = (url.startsWith('blob:') || url.startsWith('data:')) ? {} : { cache: 'force-cache' };
+      const res = await fetch(url, options);
       if (!res.ok) return null;
       const blob = await res.blob();
       return await new Promise((resolve) => {
@@ -1358,6 +1670,31 @@
         reader.onloadend = () => resolve(reader.result);
         reader.onerror = () => resolve(null);
         reader.readAsDataURL(blob);
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Image オブジェクト + Canvas 描画で Data URL に変換
+   */
+  async function imageObjectToDataUrl(url) {
+    try {
+      return await new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          try {
+            const dataUrl = imageToDataUrlViaCanvas(img);
+            resolve(dataUrl);
+          } catch (_) {
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+        setTimeout(() => resolve(null), 3000);
       });
     } catch (_) {
       return null;
@@ -1375,17 +1712,32 @@
       absUrl = new URL(rawSrc, location.href).href;
     } catch (_) {}
 
+    // キャッシュをチェック
+    if (IMAGE_BASE64_CACHE.has(rawSrc)) return IMAGE_BASE64_CACHE.get(rawSrc);
+    if (IMAGE_BASE64_CACHE.has(absUrl)) return IMAGE_BASE64_CACHE.get(absUrl);
+
     // 既にBase64の場合
     if (absUrl.startsWith('data:image/')) {
-      // 巨大なBase64(400KB超等)でなければそのまま使用可能
-      if (absUrl.length < 400000) return absUrl;
+      if (absUrl.length < 500000) {
+        IMAGE_BASE64_CACHE.set(absUrl, absUrl);
+        return absUrl;
+      }
+    }
+
+    // liveImgの探索補完 (LIVE_ELEMENT_IMAGE_MAPも確認)
+    if (!liveImg) {
+      liveImg = LIVE_ELEMENT_IMAGE_MAP.get(rawSrc) || LIVE_ELEMENT_IMAGE_MAP.get(absUrl) || null;
     }
 
     // 1) ライブDOMのimg要素から直接Canvas描画を試行
     if (liveImg) {
-      if (liveImg.complete && liveImg.naturalWidth > 0) {
+      if (liveImg.complete && (liveImg.naturalWidth > 0 || liveImg.width > 0)) {
         const dataUrl = imageToDataUrlViaCanvas(liveImg);
-        if (dataUrl) return dataUrl;
+        if (dataUrl) {
+          IMAGE_BASE64_CACHE.set(rawSrc, dataUrl);
+          IMAGE_BASE64_CACHE.set(absUrl, dataUrl);
+          return dataUrl;
+        }
       } else {
         // 画像読み込み完了を少し待機
         await new Promise((resolve) => {
@@ -1394,9 +1746,13 @@
           liveImg.addEventListener('error', done, { once: true });
           setTimeout(done, 1500);
         });
-        if (liveImg.naturalWidth > 0) {
+        if (liveImg.naturalWidth > 0 || liveImg.width > 0) {
           const dataUrl = imageToDataUrlViaCanvas(liveImg);
-          if (dataUrl) return dataUrl;
+          if (dataUrl) {
+            IMAGE_BASE64_CACHE.set(rawSrc, dataUrl);
+            IMAGE_BASE64_CACHE.set(absUrl, dataUrl);
+            return dataUrl;
+          }
         }
       }
     }
@@ -1404,44 +1760,58 @@
     // 2) fetch による Blob 取得 (blob: URL や same-origin / CORS対応画像)
     const fetchedDataUrl = await fetchBlobToDataUrl(absUrl);
     if (fetchedDataUrl) {
-      // 一時Imageを作ってCanvasでリサイズ・最適化
       try {
-        const tempImg = new Image();
-        tempImg.src = fetchedDataUrl;
-        await new Promise((resolve) => {
-          tempImg.onload = () => resolve();
-          tempImg.onerror = () => resolve();
-          setTimeout(resolve, 1500);
-        });
-        if (tempImg.naturalWidth > 0) {
-          const optimized = imageToDataUrlViaCanvas(tempImg);
-          if (optimized) return optimized;
-        }
-      } catch (_) {}
-      return fetchedDataUrl;
+        const optimized = await imageObjectToDataUrl(fetchedDataUrl);
+        const result = optimized || fetchedDataUrl;
+        IMAGE_BASE64_CACHE.set(rawSrc, result);
+        IMAGE_BASE64_CACHE.set(absUrl, result);
+        return result;
+      } catch (_) {
+        IMAGE_BASE64_CACHE.set(rawSrc, fetchedDataUrl);
+        IMAGE_BASE64_CACHE.set(absUrl, fetchedDataUrl);
+        return fetchedDataUrl;
+      }
     }
 
-    // 3) Background Service Worker (拡張機能権限・host_permissions) 経由での取得
-    try {
-      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-        const bgResult = await new Promise((resolve) => {
-          chrome.runtime.sendMessage(
-            { type: 'AI2PDF_FETCH_IMAGE_BASE64', url: absUrl },
-            (resp) => {
-              if (chrome.runtime.lastError || !resp || !resp.ok) {
-                resolve(null);
-              } else {
-                resolve(resp.dataUrl);
-              }
-            }
-          );
-          setTimeout(() => resolve(null), 6000);
-        });
-        if (bgResult) return bgResult;
-      }
-    } catch (_) {}
+    // 3) Image オブジェクト + Canvas 描画試行 (blob: URL 等の追加フォールバック)
+    const imgObjUrl = await imageObjectToDataUrl(absUrl);
+    if (imgObjUrl) {
+      IMAGE_BASE64_CACHE.set(rawSrc, imgObjUrl);
+      IMAGE_BASE64_CACHE.set(absUrl, imgObjUrl);
+      return imgObjUrl;
+    }
 
-    // 4) どうしても変換できなかった場合は元のURLをフォールバックとして残す
+    // 4) Background Service Worker (拡張機能権限・host_permissions) 経由での取得 (※ blob: は別コンテキストのため渡さない)
+    if (!absUrl.startsWith('blob:') && !absUrl.startsWith('data:')) {
+      try {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          const bgResult = await new Promise((resolve) => {
+            chrome.runtime.sendMessage(
+              { type: 'AI2PDF_FETCH_IMAGE_BASE64', url: absUrl },
+              (resp) => {
+                if (chrome.runtime.lastError || !resp || !resp.ok) {
+                  resolve(null);
+                } else {
+                  resolve(resp.dataUrl);
+                }
+              }
+            );
+            setTimeout(() => resolve(null), 6000);
+          });
+          if (bgResult) {
+            IMAGE_BASE64_CACHE.set(rawSrc, bgResult);
+            IMAGE_BASE64_CACHE.set(absUrl, bgResult);
+            return bgResult;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 5) blob: URL が変換できなかった場合、export.html側では無効になるため、null を返す
+    if (absUrl.startsWith('blob:')) {
+      return null;
+    }
+
     return absUrl;
   }
 
@@ -1468,8 +1838,8 @@
       }
     });
 
-    // 変換結果キャッシュ (同一画像が複数箇所にあっても1回だけ変換)
-    const cache = new Map();
+    // 変換結果キャッシュ (全体共有キャッシュを利用)
+    const cache = IMAGE_BASE64_CACHE;
 
     for (const m of messages) {
       if (!m.html || !m.html.includes('<img')) continue;
@@ -1483,11 +1853,14 @@
         const src = getImageSourceUrl(img) || img.getAttribute('src');
         if (!src) continue;
 
-        let base64 = cache.get(src);
+        let base64 = cache.get(src) || (img.src && cache.get(img.src)) || null;
         if (!base64) {
           const liveImg = pageImgsBySrc.get(src) ||
+            LIVE_ELEMENT_IMAGE_MAP.get(src) ||
             pageImgsBySrc.get(img.getAttribute('src')) ||
-            pageImgsBySrc.get(img.src);
+            pageImgsBySrc.get(img.src) ||
+            LIVE_ELEMENT_IMAGE_MAP.get(img.getAttribute('src')) ||
+            LIVE_ELEMENT_IMAGE_MAP.get(img.src);
           base64 = await resolveImageAsBase64(liveImg, src);
           if (base64) {
             cache.set(src, base64);

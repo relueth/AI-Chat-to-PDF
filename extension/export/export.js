@@ -109,9 +109,9 @@
       }
     });
 
-    // 重複した「あなたのプロンプト」や「Gemini の回答」等のヘッダーを除去
+    // 重複した「あなたのプロンプト」や「Gemini の回答」等のヘッダーを除去 (画像を含むものは保護)
     tpl.content.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="header"], [class*="title"], [class*="label"]').forEach((el) => {
-      if (/^(あなたのプロンプト|Your prompt|Gemini の回答|Gemini's response|Grok の回答|Grok's response)/i.test(el.textContent.trim())) {
+      if (!el.querySelector('img') && /^(あなたのプロンプト|Your prompt|Gemini の回答|Gemini's response|Grok の回答|Grok's response)/i.test(el.textContent.trim())) {
         el.remove();
       }
     });
@@ -272,6 +272,7 @@
       if (m.role === 'user') {
         const potentialHeaders = body.querySelectorAll('p, div, span, h1, h2, h3');
         for (const ph of potentialHeaders) {
+          if (ph.querySelector('img')) continue;
           const trimmed = ph.textContent.trim();
           if (/^(あなたのプロンプト|Your prompt)\s*$/i.test(trimmed)) {
             ph.remove();
