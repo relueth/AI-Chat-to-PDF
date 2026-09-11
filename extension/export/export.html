@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Convert AI chat conversations to PDF, HTML, or Markdown text with math formatting preserved and selective conversation deletion support.">
   <title>PDFエクスポート - AI Chat to PDF</title>
 
   <!-- KaTeX: ローカルCSS・フォントを使用し、オフライン・制限環境でも確実に数式を描画 -->
@@ -37,7 +38,42 @@
       <h1 id="doc-title" class="doc-title"></h1>
       <p id="doc-meta" class="doc-meta"></p>
     </div>
+
+    <!-- 編集・削除ツールバー (印刷・エクスポート時は非表示) -->
+    <div id="edit-bar" class="edit-bar no-print">
+      <div class="edit-bar-left">
+        <label class="select-all-wrap" title="すべての会話を選択/解除">
+          <input type="checkbox" id="chk-select-all" class="chk-custom">
+          <span class="select-all-text">すべて選択</span>
+        </label>
+        <button id="btn-delete-selected" class="ebtn ebtn-danger" disabled title="チェックした会話を一括で削除します">
+          <svg class="ebtn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          選択した会話を削除 (<span id="selected-count">0</span>)
+        </button>
+        <button id="btn-undo" class="ebtn ebtn-secondary" style="display:none;" title="削除した会話を復元します">
+          <svg class="ebtn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 10h10a5 5 0 0 1 5 5v2M3 10l6-6M3 10l6 6"></path>
+          </svg>
+          元に戻す (<span id="deleted-count">0</span>件削除中)
+        </button>
+      </div>
+      <div class="edit-bar-right">
+        <span class="edit-guide">※不要な会話を削除してからPDF・HTML・テキスト保存できます</span>
+        <span id="active-badge" class="count-badge">0 メッセージ</span>
+      </div>
+    </div>
+
     <div id="messages" class="messages"></div>
+
+    <div id="empty-notice" class="empty-notice no-print" style="display:none;">
+      <p class="empty-title">すべての会話が削除されています</p>
+      <p class="empty-desc">「すべての会話を復元」ボタンを押すと元の会話に戻せます。</p>
+      <button id="btn-restore-all" class="ebtn ebtn-secondary">すべての会話を復元</button>
+    </div>
+
     <footer class="doc-footer">
       <span>Exported by AI Chat to PDF Extension</span>
     </footer>

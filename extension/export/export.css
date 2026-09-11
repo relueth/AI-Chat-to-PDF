@@ -95,20 +95,176 @@ body {
 
 .messages { display: flex; flex-direction: column; gap: 18px; }
 
+/* ---------------- 会話編集・選択ツールバー (印刷時は非表示) ---------------- */
+.no-print { /* 印刷時に非表示 */ }
+
+.edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 20px;
+}
+.edit-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.edit-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.select-all-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  user-select: none;
+}
+.chk-custom {
+  width: 17px;
+  height: 17px;
+  accent-color: #2563eb;
+  cursor: pointer;
+  margin: 0;
+}
+.ebtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.ebtn-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.ebtn-danger {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+}
+.ebtn-danger:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+.ebtn-danger:disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  cursor: not-allowed;
+  opacity: .7;
+}
+.ebtn-secondary {
+  background: #ffffff;
+  color: #374151;
+  border-color: #d1d5db;
+}
+.ebtn-secondary:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+.edit-guide {
+  font-size: 12px;
+  color: #6b7280;
+}
+.count-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: #e5e7eb;
+  color: #374151;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
 /* ---------------- メッセージバブル ---------------- */
 .msg {
   border-radius: 10px;
   padding: 14px 18px;
   break-inside: avoid-page; /* メッセージの途中で改ページしない */
+  transition: box-shadow .15s ease, border-color .15s ease;
+  position: relative;
+}
+.msg.is-selected {
+  box-shadow: 0 0 0 2px #3b82f6;
+  border-color: #93c5fd;
+}
+.msg.is-deleted {
+  display: none !important;
+}
+
+.msg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  min-height: 24px;
+}
+.msg-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.msg-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.msg-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
 }
 .msg-role {
-  display: block;
+  display: inline-block;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: .04em;
-  margin-bottom: 6px;
   text-transform: uppercase;
 }
+.msg-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  color: #6b7280;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.msg-delete-btn:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+.msg-btn-icon {
+  width: 13px;
+  height: 13px;
+}
+
 .msg-user {
   background: var(--user-bg);
   border: 1px solid var(--user-border);
@@ -119,6 +275,27 @@ body {
   border: 1px solid var(--assistant-border);
 }
 .msg-assistant .msg-role { color: #059669; }
+
+/* ---------------- 空状態通知 ---------------- */
+.empty-notice {
+  text-align: center;
+  padding: 36px 20px;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 10px;
+  margin: 10px 0 20px;
+}
+.empty-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #374151;
+  margin: 0 0 6px;
+}
+.empty-desc {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 0 0 16px;
+}
 
 .msg-body { overflow-wrap: break-word; }
 .msg-body > :first-child { margin-top: 0; }
@@ -349,7 +526,7 @@ body {
    ============================================================ */
 @media print {
   body { background: #ffffff; font-size: 12px; }
-  .toolbar, .loading { display: none !important; }
+  .toolbar, .loading, .no-print, .edit-bar, .empty-notice, .msg-header-right, .msg-select-wrap { display: none !important; }
 
   .document {
     max-width: none;
@@ -358,6 +535,16 @@ body {
     border: none;
     border-radius: 0;
     box-shadow: none;
+  }
+
+  .msg.is-selected {
+    box-shadow: none !important;
+  }
+  .msg-user.is-selected {
+    border-color: var(--user-border) !important;
+  }
+  .msg-assistant.is-selected {
+    border-color: var(--assistant-border) !important;
   }
 
   /* 数式・コードブロック・表・画像は改ページしない */

@@ -58,6 +58,7 @@ app.get('/api/download-extension-zip', async (req, res) => {
 
 // Serve extension directory statically for direct access
 app.use(express.static(path.join(__dirname, 'extension')));
+app.use(express.static(path.join(__dirname, 'extension', 'export')));
 
 // Route root to export.html
 app.get('/', (req, res) => {

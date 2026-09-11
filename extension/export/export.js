@@ -23,16 +23,32 @@
   const btnDlText = document.getElementById('btn-dl-text');
   const btnClose = document.getElementById('btn-close');
 
+  // 会話削除・選択UI要素
+  const editBarEl = document.getElementById('edit-bar');
+  const chkSelectAll = document.getElementById('chk-select-all');
+  const btnDeleteSelected = document.getElementById('btn-delete-selected');
+  const selectedCountEl = document.getElementById('selected-count');
+  const btnUndo = document.getElementById('btn-undo');
+  const deletedCountEl = document.getElementById('deleted-count');
+  const activeBadgeEl = document.getElementById('active-badge');
+  const emptyNoticeEl = document.getElementById('empty-notice');
+  const btnRestoreAll = document.getElementById('btn-restore-all');
+
   const ROLE_LABEL = { user: 'あなた', assistant: 'AI' };
 
   const FORMAT_HINTS = {
-    pdf: '印刷ダイアログで「送信先 → PDFに保存」を選んでください。背景グラフィックは不要、余白は「デフォルト」推奨です。',
-    html: '「HTMLを保存」で、数式レイアウトを含む単一HTMLファイルをダウンロードします。ブラウザで開いて閲覧・印刷できます。',
-    text: '「テキストを保存」でMarkdown風テキスト(.txt)をダウンロードします。数式は $...$ / $$...$$ のTeX記法で出力されます。'
+    pdf: '不要な会話を選択・削除して整理した後、「PDFとして保存」を押してください。印刷ダイアログで「送信先 → PDFに保存」を選びます。',
+    html: '不要な会話を選択・削除して整理した後、「HTMLを保存」を押してください。削除後の内容で単一HTMLファイルをダウンロードします。',
+    text: '不要な会話を選択・削除して整理した後、「テキストを保存」を押してください。削除後の内容でMarkdown風テキストを出力します。'
   };
 
   let currentPayload = null;
   let currentFormat = 'pdf';
+
+  // 削除・選択状態の管理
+  const deletedMessageIds = new Set();
+  const selectedMessageIds = new Set();
+  const undoHistory = []; // { type: 'single' | 'batch', ids: string[] }
 
   // ---------------------------------------------------------------
   // ユーティリティ
@@ -223,19 +239,25 @@
   }
 
   // ---------------------------------------------------------------
-  // 画面へのレンダリング (全形式共通)
+  // 会話データの選択・削除・復元ロジック
   // ---------------------------------------------------------------
-  function render(payload) {
-    const { site, siteName, title, url, exportedAt, messages } = payload;
+  function getActiveMessages() {
+    if (!currentPayload || !currentPayload.messages) return [];
+    return currentPayload.messages.filter((m) => !deletedMessageIds.has(m.id));
+  }
 
-    const displayTitle = escapeText(title || 'AI会話');
-    docTitleEl.textContent = displayTitle;
-    document.title = displayTitle + ' - エクスポート';
-
+  function updateDocMeta(activeCount, deletedCount) {
+    if (!currentPayload) return;
+    const { site, siteName, exportedAt, url } = currentPayload;
     docMetaEl.innerHTML = '';
     docMetaEl.appendChild(document.createTextNode(`サービス: ${siteName || site || '-'}`));
     if (exportedAt) {
       docMetaEl.appendChild(document.createTextNode('　|　エクスポート: ' + formatDate(exportedAt)));
+    }
+    if (deletedCount > 0) {
+      docMetaEl.appendChild(document.createTextNode(`　|　出力: ${activeCount}件 (${deletedCount}件除外)`));
+    } else {
+      docMetaEl.appendChild(document.createTextNode(`　|　全${activeCount}件`));
     }
     if (url) {
       docMetaEl.appendChild(document.createElement('br'));
@@ -246,16 +268,195 @@
       a.rel = 'noopener';
       docMetaEl.appendChild(a);
     }
+  }
+
+  function updateControlBarState() {
+    const active = getActiveMessages();
+    const totalCount = currentPayload ? currentPayload.messages.length : 0;
+    const activeCount = active.length;
+    const deletedCount = deletedMessageIds.size;
+    const selectedCount = selectedMessageIds.size;
+
+    // ツールバーとバッジの件数更新
+    if (deletedCount > 0) {
+      tbCountEl.textContent = `${activeCount} / ${totalCount} メッセージ (${deletedCount}件削除中)`;
+      activeBadgeEl.textContent = `${activeCount} / ${totalCount} 件`;
+    } else {
+      tbCountEl.textContent = `${activeCount} メッセージ`;
+      activeBadgeEl.textContent = `全 ${activeCount} 件`;
+    }
+
+    updateDocMeta(activeCount, deletedCount);
+
+    // 選択削除ボタンの状態
+    selectedCountEl.textContent = String(selectedCount);
+    btnDeleteSelected.disabled = selectedCount === 0;
+
+    // 元に戻すボタンの状態
+    if (deletedCount > 0) {
+      btnUndo.style.display = 'inline-flex';
+      deletedCountEl.textContent = String(deletedCount);
+    } else {
+      btnUndo.style.display = 'none';
+    }
+
+    // 「すべて選択」チェックボックスの状態
+    if (activeCount === 0) {
+      chkSelectAll.checked = false;
+      chkSelectAll.indeterminate = false;
+      chkSelectAll.disabled = true;
+      emptyNoticeEl.style.display = 'block';
+    } else {
+      chkSelectAll.disabled = false;
+      emptyNoticeEl.style.display = 'none';
+      if (selectedCount === activeCount) {
+        chkSelectAll.checked = true;
+        chkSelectAll.indeterminate = false;
+      } else if (selectedCount > 0) {
+        chkSelectAll.checked = false;
+        chkSelectAll.indeterminate = true;
+      } else {
+        chkSelectAll.checked = false;
+        chkSelectAll.indeterminate = false;
+      }
+    }
+  }
+
+  function toggleSelectMessage(id, isSelected) {
+    if (isSelected) {
+      selectedMessageIds.add(id);
+    } else {
+      selectedMessageIds.delete(id);
+    }
+    const el = messagesEl.querySelector(`[data-msg-id="${id}"]`);
+    if (el) {
+      el.classList.toggle('is-selected', isSelected);
+      const chk = el.querySelector('.msg-select-chk');
+      if (chk) chk.checked = isSelected;
+    }
+    updateControlBarState();
+  }
+
+  function deleteSingleMessage(id) {
+    if (deletedMessageIds.has(id)) return;
+    deletedMessageIds.add(id);
+    selectedMessageIds.delete(id);
+    undoHistory.push({ type: 'single', ids: [id] });
+
+    const el = messagesEl.querySelector(`[data-msg-id="${id}"]`);
+    if (el) {
+      el.classList.add('is-deleted');
+      el.classList.remove('is-selected');
+    }
+    updateControlBarState();
+  }
+
+  function deleteSelectedMessages() {
+    if (selectedMessageIds.size === 0) return;
+    const toDelete = Array.from(selectedMessageIds);
+    toDelete.forEach((id) => {
+      deletedMessageIds.add(id);
+      const el = messagesEl.querySelector(`[data-msg-id="${id}"]`);
+      if (el) {
+        el.classList.add('is-deleted');
+        el.classList.remove('is-selected');
+      }
+    });
+    selectedMessageIds.clear();
+    undoHistory.push({ type: 'batch', ids: toDelete });
+    updateControlBarState();
+  }
+
+  function undoLastDelete() {
+    if (undoHistory.length === 0) return;
+    const lastAction = undoHistory.pop();
+    if (lastAction && lastAction.ids) {
+      lastAction.ids.forEach((id) => {
+        deletedMessageIds.delete(id);
+        const el = messagesEl.querySelector(`[data-msg-id="${id}"]`);
+        if (el) el.classList.remove('is-deleted');
+      });
+    }
+    updateControlBarState();
+  }
+
+  function restoreAllMessages() {
+    deletedMessageIds.clear();
+    selectedMessageIds.clear();
+    undoHistory.length = 0;
+    messagesEl.querySelectorAll('.msg').forEach((el) => {
+      el.classList.remove('is-deleted', 'is-selected');
+      const chk = el.querySelector('.msg-select-chk');
+      if (chk) chk.checked = false;
+    });
+    updateControlBarState();
+  }
+
+  function toggleSelectAll(checked) {
+    const active = getActiveMessages();
+    if (checked) {
+      active.forEach((m) => selectedMessageIds.add(m.id));
+    } else {
+      selectedMessageIds.clear();
+    }
+    messagesEl.querySelectorAll('.msg:not(.is-deleted)').forEach((el) => {
+      el.classList.toggle('is-selected', checked);
+      const chk = el.querySelector('.msg-select-chk');
+      if (chk) chk.checked = checked;
+    });
+    updateControlBarState();
+  }
+
+  // ---------------------------------------------------------------
+  // 画面へのレンダリング (全形式共通)
+  // ---------------------------------------------------------------
+  function render(payload) {
+    const { site, siteName, title, url, exportedAt, messages } = payload;
+
+    // 各メッセージに一意のIDを付与
+    messages.forEach((m, idx) => {
+      if (!m.id) m.id = `msg-${idx}`;
+    });
+
+    const displayTitle = escapeText(title || 'AI会話');
+    docTitleEl.textContent = displayTitle;
+    document.title = displayTitle + ' - エクスポート';
 
     tbSiteEl.textContent = siteName || site || '-';
     tbTitleEl.textContent = displayTitle;
-    tbCountEl.textContent = `${messages.length} メッセージ`;
 
     messagesEl.innerHTML = '';
     const frag = document.createDocumentFragment();
+
     for (const m of messages) {
       const wrap = document.createElement('article');
       wrap.className = 'msg ' + (m.role === 'user' ? 'msg-user' : 'msg-assistant');
+      wrap.setAttribute('data-msg-id', m.id);
+
+      if (deletedMessageIds.has(m.id)) wrap.classList.add('is-deleted');
+      if (selectedMessageIds.has(m.id)) wrap.classList.add('is-selected');
+
+      // ヘッダー (ロール + 選択チェックボックス + 削除ボタン)
+      const header = document.createElement('div');
+      header.className = 'msg-header';
+
+      const headerLeft = document.createElement('div');
+      headerLeft.className = 'msg-header-left';
+
+      const selectWrap = document.createElement('label');
+      selectWrap.className = 'msg-select-wrap no-print';
+      selectWrap.title = 'この会話を選択';
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.className = 'msg-select-chk chk-custom';
+      chk.setAttribute('data-msg-id', m.id);
+      chk.checked = selectedMessageIds.has(m.id);
+      chk.addEventListener('change', (e) => {
+        e.stopPropagation();
+        toggleSelectMessage(m.id, chk.checked);
+      });
+      selectWrap.appendChild(chk);
+      headerLeft.appendChild(selectWrap);
 
       const role = document.createElement('span');
       role.className = 'msg-role';
@@ -263,6 +464,31 @@
       if (m.role === 'assistant' && siteName) {
         role.textContent = siteName;
       }
+      headerLeft.appendChild(role);
+
+      const headerRight = document.createElement('div');
+      headerRight.className = 'msg-header-right no-print';
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'msg-delete-btn';
+      delBtn.title = 'この会話を削除して出力対象から除外';
+      delBtn.innerHTML = `
+        <svg class="msg-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+        <span>削除</span>
+      `;
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteSingleMessage(m.id);
+      });
+      headerRight.appendChild(delBtn);
+
+      header.appendChild(headerLeft);
+      header.appendChild(headerRight);
+      wrap.appendChild(header);
 
       const body = document.createElement('div');
       body.className = 'msg-body';
@@ -286,7 +512,6 @@
         }
       }
 
-      wrap.appendChild(role);
       wrap.appendChild(body);
       frag.appendChild(wrap);
     }
@@ -294,21 +519,36 @@
 
     // Kimi等の未レンダリングTeX文字列や数式タグをKaTeX形式に自動変換
     renderMath(messagesEl);
+
+    // コントロールバーと件数バッジの状態更新
+    updateControlBarState();
   }
 
   // ---------------------------------------------------------------
-  // HTML形式: 自立した単一HTMLファイルを生成
+  // HTML形式: 自立した単一HTMLファイルを生成 (削除された会話を除外)
   // ---------------------------------------------------------------
   async function buildStandaloneHtml(payload) {
     // export.css の内容を取り込んでインライン化(単一ファイル化のため)
     let cssText = '';
     try {
-      const res = await fetch(chrome.runtime.getURL('export/export.css'));
-      cssText = await res.text();
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+        const res = await fetch(chrome.runtime.getURL('export/export.css'));
+        cssText = await res.text();
+      } else {
+        const res = await fetch('export.css');
+        cssText = await res.text();
+      }
     } catch (_) { /* CSS取り込み失敗時はKaTeXのみでも見た目は成立 */ }
 
     const displayTitle = escapeText(payload.title || 'AI会話');
-    const docHtml = document.getElementById('document').innerHTML;
+
+    // document要素をクローンし、編集UIおよび削除されたメッセージを完全に除外
+    const docClone = document.getElementById('document').cloneNode(true);
+    docClone.querySelectorAll('.no-print, .edit-bar, .empty-notice, .msg-header-right, .msg-select-wrap').forEach((n) => n.remove());
+    docClone.querySelectorAll('.msg.is-deleted').forEach((n) => n.remove());
+    docClone.querySelectorAll('.msg.is-selected').forEach((n) => n.classList.remove('is-selected'));
+
+    const docHtml = docClone.innerHTML;
 
     return [
       '<!DOCTYPE html>',
@@ -505,12 +745,19 @@
   }
 
   function buildTextDocument(payload) {
+    const active = getActiveMessages();
     const lines = [];
     lines.push('# ' + (payload.title || 'AI会話'));
     lines.push('');
     lines.push('サービス: ' + (payload.siteName || payload.site || '-'));
     if (payload.exportedAt) {
       lines.push('エクスポート: ' + formatDate(payload.exportedAt));
+    }
+    const deletedCount = deletedMessageIds.size;
+    if (deletedCount > 0) {
+      lines.push(`出力件数: ${active.length}件 (${deletedCount}件除外)`);
+    } else {
+      lines.push(`出力件数: ${active.length}件`);
     }
     if (payload.url) {
       lines.push('URL: ' + payload.url);
@@ -519,7 +766,7 @@
     lines.push('---');
     lines.push('');
 
-    for (const m of payload.messages) {
+    for (const m of active) {
       const role = m.role === 'user'
         ? 'あなた'
         : (payload.siteName || 'AI');
@@ -541,6 +788,66 @@
       '-' + formatDateForFilename(currentPayload.exportedAt) + '.txt';
     // BOM付きで保存(Windowsのメモ帳等で文字化け防止)
     downloadBlob('﻿' + text, name, 'text/plain;charset=utf-8');
+  }
+
+  // ---------------------------------------------------------------
+  // デモ用サンプル会話データ (プレビュー確認用)
+  // ---------------------------------------------------------------
+  const DEMO_PAYLOAD = {
+    site: 'gemini',
+    siteName: 'Gemini',
+    title: '量子コンピュータとショアのアルゴリズムについての解説',
+    url: 'https://gemini.google.com/app',
+    exportedAt: new Date().toISOString(),
+    messages: [
+      {
+        id: 'msg-0',
+        role: 'user',
+        html: '<p>量子コンピュータが従来の暗号通信に与える影響と、ショアのアルゴリズムの仕組みについて教えてください。</p>'
+      },
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        html: '<p>量子コンピュータは量子力学の重ね合わせと量子もつれを利用して計算を行うシステムです。</p>' +
+              '<p>特に<strong>ショアのアルゴリズム (Shor\'s Algorithm)</strong>は、整数の素因数分解を多項式時間で解くアルゴリズムであり、RSA暗号の安全性を根本から崩す可能性があります。</p>' +
+              '<p>古典アルゴリズムでの素因数分解の計算量：</p>' +
+              '<p class="katex-display">$$O\\left(\\exp\\left(\\sqrt[3]{\\frac{64}{9} n (\\log n)^2}\\right)\\right)$$</p>' +
+              '<p>ショアのアルゴリズムを用いた場合の計算量：</p>' +
+              '<p class="katex-display">$$O(n^2 \\log n \\log \\log n)$$</p>' +
+              '<p>このように多項式時間へ飛躍的に短縮されます。</p>'
+      },
+      {
+        id: 'msg-2',
+        role: 'user',
+        html: '<p>量子ビット（qubit）の状態はどのように数式で表現されますか？</p>'
+      },
+      {
+        id: 'msg-3',
+        role: 'assistant',
+        html: '<p>単一の量子ビットの状態 $|\\psi\\rangle$ は、基底状態 $|0\\rangle$ と $|1\\rangle$ の重ね合わせとして次のように表されます：</p>' +
+              '<p class="katex-display">$$|\\psi\\rangle = \\alpha |0\\rangle + \\beta |1\\rangle \\quad (\\text{ただし } |\\alpha|^2 + |\\beta|^2 = 1)$$</p>' +
+              '<p>複数の状態の確率振幅を同時に保持できることが、量子並列性の基盤となっています。</p>'
+      },
+      {
+        id: 'msg-4',
+        role: 'user',
+        html: '<p>了解です！ところで明日の天気はどうなりそうですか？（※不要な会話の例）</p>'
+      },
+      {
+        id: 'msg-5',
+        role: 'assistant',
+        html: '<p>明日は全国的におおむね晴れの予報です。（※エクスポート前に選択して削除できるサンプルです）</p>'
+      }
+    ]
+  };
+
+  async function loadDemoPayload() {
+    loadingEl.style.display = 'flex';
+    loadingEl.innerHTML = '<div class="spinner"></div><p>デモ会話データを読み込んでいます…</p>';
+    currentPayload = DEMO_PAYLOAD;
+    render(DEMO_PAYLOAD);
+    await waitForAssets();
+    loadingEl.style.display = 'none';
   }
 
   // ---------------------------------------------------------------
@@ -590,31 +897,42 @@
   // ---------------------------------------------------------------
   async function init() {
     // 形式をクエリパラメータから取得
+    let isDemo = false;
     try {
       const q = new URLSearchParams(location.search);
       const f = q.get('format');
       if (f === 'pdf' || f === 'html' || f === 'text') currentFormat = f;
+      if (q.get('demo') === '1' || q.get('demo') === 'true') isDemo = true;
     } catch (_) { /* noop */ }
 
     tbHintEl.textContent = FORMAT_HINTS[currentFormat] || FORMAT_HINTS.pdf;
 
     let payload = null;
-    try {
-      const res = await chrome.storage.session.get('ai2pdf_payload');
-      payload = res && res.ai2pdf_payload;
-    } catch (e) {
-      console.error('storage read failed', e);
+    if (!isDemo) {
+      try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
+          const res = await chrome.storage.session.get('ai2pdf_payload');
+          payload = res && res.ai2pdf_payload;
+        }
+      } catch (e) {
+        console.error('storage read failed', e);
+      }
     }
 
+    // セッションデータが無い場合、デモデータを自動表示（またはデモボタンを提供）
     if (!payload || !payload.messages || !payload.messages.length) {
-      loadingEl.innerHTML =
-        '<div style="max-width:520px;text-align:center;line-height:1.7;padding:32px 28px;background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;box-shadow:0 2px 8px rgba(0,0,0,0.06);">' +
-        '<h2 style="font-size:18px;font-weight:700;margin:0 0 10px;color:#111827;">AI Chat to PDF 拡張機能</h2>' +
-        '<p style="font-size:13px;color:#4b5563;margin-bottom:20px;">' +
-        'Kimi / Gemini / Gemini Notebook (NotebookLM) / Claude / Genspark / ChatGPT / Grok の会話ページで拡張機能アイコンをクリックして変換を実行してください。<br>' +
-        '以下のボタンから拡張機能のZIPパッケージをダウンロードしてChromeに追加できます。</p>' +
-        '<a href="/api/download-extension-zip" class="tbtn tbtn-primary" style="display:inline-block;padding:10px 22px;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;border-radius:8px;">拡張機能（ZIP）をダウンロード</a>' +
-        '</div>';
+      // プレビュー画面またはWeb直接表示の場合
+      currentPayload = DEMO_PAYLOAD;
+      render(DEMO_PAYLOAD);
+      await waitForAssets();
+      loadingEl.style.display = 'none';
+
+      // 画面上部にデモモード案内バナーを表示
+      const demoBanner = document.createElement('div');
+      demoBanner.className = 'no-print';
+      demoBanner.style.cssText = 'background:#fef3c7;border:1px solid #fde68a;color:#92400e;padding:8px 16px;text-align:center;font-size:12px;font-weight:500;';
+      demoBanner.innerHTML = '💡 <strong>プレビューモード:</strong> サンプル会話を表示しています。不要な会話の削除や選択削除、元に戻す操作を試した上で、「PDFとして保存」「HTMLを保存」「テキストを保存」をお試しいただけます。';
+      document.body.insertBefore(demoBanner, document.body.firstChild);
       return;
     }
 
@@ -624,25 +942,27 @@
     loadingEl.style.display = 'none';
 
     // 抽出データは使い捨てにする(再読み込み時の誤表示防止)
-    try { await chrome.storage.session.remove('ai2pdf_payload'); } catch (_) { /* noop */ }
-
-    // 選択された形式に応じて自動実行
-    setTimeout(() => {
-      try {
-        if (currentFormat === 'pdf') {
-          window.print();
-        } else if (currentFormat === 'html') {
-          downloadHtml();
-        } else if (currentFormat === 'text') {
-          downloadText();
-        }
-      } catch (e) {
-        console.error('auto action failed', e);
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
+        await chrome.storage.session.remove('ai2pdf_payload');
       }
-    }, 400);
+    } catch (_) { /* noop */ }
   }
 
-  btnPrint.addEventListener('click', () => window.print());
+  // 会話編集・選択ボタンのイベントリスナー
+  chkSelectAll.addEventListener('change', (e) => toggleSelectAll(e.target.checked));
+  btnDeleteSelected.addEventListener('click', () => deleteSelectedMessages());
+  btnUndo.addEventListener('click', () => undoLastDelete());
+  btnRestoreAll.addEventListener('click', () => restoreAllMessages());
+
+  btnPrint.addEventListener('click', () => {
+    const active = getActiveMessages();
+    if (active.length === 0) {
+      alert('出力可能な会話がありません。すべての会話が削除されています。');
+      return;
+    }
+    window.print();
+  });
   btnDlHtml.addEventListener('click', () => downloadHtml());
   btnDlText.addEventListener('click', () => downloadText());
   btnClose.addEventListener('click', () => window.close());
