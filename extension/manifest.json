@@ -63,7 +63,8 @@
       "resources": [
         "export/export.html",
         "lib/katex/*",
-        "lib/katex/fonts/*"
+        "lib/katex/fonts/*",
+        "lib/mathjax/*"
       ],
       "matches": ["<all_urls>"]
     }

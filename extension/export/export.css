@@ -52,7 +52,44 @@ body {
   font-size: 13px;
 }
 .tb-count { font-size: 12px; color: #6b7280; }
-.toolbar-actions { display: flex; gap: 8px; }
+.toolbar-actions { display: flex; gap: 8px; align-items: center; }
+
+/* 数式エンジン切替セレクター */
+.engine-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: #e5e7eb;
+}
+.engine-label {
+  font-weight: 600;
+  color: #9ca3af;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.engine-select {
+  background: #111827;
+  color: #ffffff;
+  border: 1px solid #4b5563;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+}
+.engine-select:focus {
+  border-color: #3b82f6;
+}
+.engine-select option {
+  background: #1f2937;
+  color: #ffffff;
+}
 .tbtn {
   border: 1px solid #374151;
   background: #1f2937;
@@ -463,32 +500,97 @@ body {
 }
 
 /* ============================================================
-   数式 (KaTeX) - 印刷で形を崩さないための調整
+   数式 (KaTeX) - 印刷・画面で形を崩さず美しい組版を維持する調整
    ============================================================ */
-/* Chrome 109+ の MathML 重複描画防止 (KaTeX HTML が描画されるため MathML は非表示) */
-.katex .katex-mathml {
+/* Chrome 109+ の MathML 重複描画および二重線・太線化の完全防止 (KaTeX HTMLのみを描画) */
+.katex-mathml,
+.katex .katex-mathml,
+math,
+math * {
+  display: none !important;
+}
+annotation,
+.katex annotation {
   display: none !important;
 }
 
+/* 本文中の数式のフォントサイズ (大きすぎず、小さすぎず、文字と指数の比率を維持) */
 .msg-body .katex {
-  font-size: 1.06em;          /* 本文より少し大きく */
-  line-height: 1.2;
-  white-space: nowrap;        /* 数式の途中改行を防止 */
+  font-size: 1.1em;
+  text-indent: 0;
 }
+
+/* テキストモード (\text{}, \mathrm{}, \textrm{} 等): ローマン体 (立体・直立) の完全保証 */
+.katex .text,
+.katex .textrm,
+.katex .mathrm,
+.katex .mord.text,
+.katex .mord.text *,
+.katex [class*="text"],
+.katex [class*="mathrm"] {
+  font-family: KaTeX_Main, "Times New Roman", "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+}
+
+/* KaTeXの日本語・CJKフォールバック文字 (ローマン体で明瞭に表示) */
+.katex .cjk_fallback {
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif !important;
+  font-style: normal !important;
+}
+
+/* ディスプレイ数式 */
 .msg-body .katex-display {
-  margin: .9em 0;
+  margin: 1.1em 0;
   padding: 6px 0;
   overflow-x: auto;           /* 画面では横スクロール許容 */
   overflow-y: hidden;
   break-inside: avoid-page;   /* ディスプレイ数式の改ページ防止 */
 }
 .msg-body .katex-display > .katex {
+  font-size: 1.18em;
   white-space: normal;        /* 長い数式は内部で折り返し可 */
 }
 
 /* Claude等で使われる \\[ ... \\] や \\( \\) の生テキスト残存防止:
    KaTeX未レンダリングの場合も可読性を保つ */
 .msg-body .math-fallback { font-family: "Cambria Math", serif; }
+
+/* ============================================================
+   数式 (MathJax) - MathJax選択時の組版・印刷スタイル
+   ============================================================ */
+mjx-container {
+  display: inline-block;
+  outline: none;
+  margin: 0 !important;
+  vertical-align: -0.22em;
+}
+/* MathJaxのテキストモード・演算子も確実にローマン体（立体）にする */
+mjx-container text,
+mjx-container .mjx-utext,
+mjx-container .mjx-n,
+mjx-container [data-c] text {
+  font-style: normal !important;
+}
+mjx-container[display="true"] {
+  display: block !important;
+  text-align: center;
+  margin: 1.1em 0 !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  break-inside: avoid-page;
+}
+mjx-container[jax="SVG"] > svg {
+  display: inline;
+  vertical-align: 0;
+  max-width: 100%;
+}
+@media print {
+  mjx-container[display="true"] {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
 
 /* ---------------- ローディング ---------------- */
 .loading {

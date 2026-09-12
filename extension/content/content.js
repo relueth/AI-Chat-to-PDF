@@ -740,12 +740,62 @@
     '[class*="spark-action"]'
   ];
 
+  /**
+   * 数式要素 (KaTeX, MathJax, MathML 等) から生TeXコードを安全に抽出し、
+   * data-tex 属性に永続退避する (累乗^2、添字_n、分数等の脱落を完全防止)
+   */
+  function preserveAllMathData(root) {
+    if (!root) return;
+    // 1. KaTeX 要素の annotation (生TeX)
+    root.querySelectorAll('.katex, .katex-display').forEach((k) => {
+      if (k.getAttribute('data-tex')) return;
+      const ann = k.querySelector('annotation[encoding="application/x-tex"], annotation');
+      if (ann && ann.textContent.trim()) {
+        const raw = ann.textContent.trim();
+        k.setAttribute('data-tex', raw);
+        const innerKatex = k.querySelector('.katex');
+        if (innerKatex && !innerKatex.getAttribute('data-tex')) innerKatex.setAttribute('data-tex', raw);
+        const parentDisplay = k.closest('.katex-display');
+        if (parentDisplay && !parentDisplay.getAttribute('data-tex')) parentDisplay.setAttribute('data-tex', raw);
+      }
+    });
+
+    // 2. MathJax (mjx-container)
+    root.querySelectorAll('mjx-container').forEach((mjx) => {
+      if (mjx.getAttribute('data-tex')) return;
+      const alt = mjx.getAttribute('alttext') || mjx.getAttribute('aria-label');
+      if (alt && alt.trim()) {
+        mjx.setAttribute('data-tex', alt.trim());
+      } else {
+        const ann = mjx.querySelector('annotation');
+        if (ann && ann.textContent.trim()) {
+          mjx.setAttribute('data-tex', ann.textContent.trim());
+        }
+      }
+    });
+
+    // 3. その他 data-math, data-latex, math タグ
+    root.querySelectorAll('[data-math], [data-latex], [data-tex-source], [class*="math-tex"], math').forEach((el) => {
+      const tex = el.getAttribute('data-math') || el.getAttribute('data-latex') || el.getAttribute('data-tex-source');
+      if (tex && !el.getAttribute('data-tex')) {
+        el.setAttribute('data-tex', tex.trim());
+      } else if (el.tagName.toLowerCase() === 'math' && !el.getAttribute('data-tex')) {
+        const ann = el.querySelector('annotation');
+        if (ann && ann.textContent.trim()) {
+          el.setAttribute('data-tex', ann.textContent.trim());
+        }
+      }
+    });
+  }
+
   function sanitizeClone(root) {
-    // ライブ要素側で画像URLを属性に書き込んでクローン時の脱落を防止
+    // ライブ要素側で画像URL・数式生TeXを属性に書き込んでクローン時の脱落を防止
     normalizeImages(root);
+    preserveAllMathData(root);
 
     const clone = root.cloneNode(true);
     normalizeImages(clone);
+    preserveAllMathData(clone);
 
     // Gemini Notebook / NotebookLM の引用・出典番号バッジ(ボタン形式)を保持してsup要素に変換
     clone.querySelectorAll('button[class*="citation"], [class*="citation-chip"], [class*="citation-pill"], [class*="citation-marker"], [class*="source-citation"], [data-source-id], [data-source-index], sup button').forEach((btn) => {
@@ -846,6 +896,11 @@
         bq.remove();
       }
     });
+
+    // MathML annotation (生TeXテキスト注釈) を親要素・子要素の data-tex 属性に確実に退避してから安全に除去
+    // これにより、MathJax切替時やテキスト出力時に累乗(^2)や添字を保持した高精度な生TeXコードを再利用できる
+    preserveAllMathData(clone);
+    clone.querySelectorAll('annotation').forEach((n) => n.remove());
 
     // ChatGPT等の添付ファイルカード内の仕切り線 (w-px, border-l, border-r などの空要素) を除去
     clone.querySelectorAll(

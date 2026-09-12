@@ -21,6 +21,13 @@
         <span id="tb-count" class="tb-count"></span>
       </div>
       <div class="toolbar-actions">
+        <div class="engine-select-wrap" title="数式のレンダリングエンジンを切り替えます（標準: KaTeX / 高機能: MathJax）">
+          <label for="select-math-engine" class="engine-label">数式:</label>
+          <select id="select-math-engine" class="engine-select">
+            <option value="katex" selected>KaTeX (標準)</option>
+            <option value="mathjax">MathJax</option>
+          </select>
+        </div>
         <button id="btn-print" class="tbtn tbtn-primary">PDFとして保存 (印刷)</button>
         <button id="btn-dl-html" class="tbtn">HTMLを保存</button>
         <button id="btn-dl-text" class="tbtn">テキストを保存</button>
@@ -84,9 +91,33 @@
     <p>会話データを読み込んでいます…</p>
   </div>
 
-  <!-- KaTeX本体および自動数式レンダラー (ローカルバンドル) -->
+  <!-- KaTeX本体および自動数式レンダラー (ローカルバンドル: 標準エンジン) -->
   <script src="../lib/katex/katex.min.js"></script>
   <script src="../lib/katex/auto-render.min.js"></script>
+
+  <!-- MathJax設定とライブラリ (ローカルバンドル: MathJax選択時に利用) -->
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']],
+        processEscapes: true,
+        processEnvironments: true
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'annotation'],
+        ignoreHtmlClass: 'no-mathjax|is-deleted'
+      },
+      svg: {
+        fontCache: 'local'
+      },
+      startup: {
+        typeset: false
+      }
+    };
+  </script>
+  <script src="../lib/mathjax/tex-svg.js" id="mathjax-script"></script>
+
   <script src="export.js"></script>
 </body>
 </html>

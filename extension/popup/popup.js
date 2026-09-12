@@ -30,12 +30,12 @@
   const FORMAT_INFO = {
     pdf: {
       label: '会話をPDF化する',
-      hint: '数式はKaTeXの描画済みレイアウトを保持したままPDFに出力します。',
+      hint: '数式はKaTeX（標準）またはMathJaxの美麗な組版を保持したままPDFに出力します。',
       done: 'PDFページを開きます…'
     },
     html: {
       label: 'HTMLとしてダウンロード',
-      hint: 'KaTeXの数式レイアウトを含む単一HTMLファイルとして保存します。ブラウザで開いて閲覧・印刷できます。',
+      hint: '数式レイアウト（KaTeXまたはMathJax）を含む単一HTMLファイルとして保存します。ブラウザで開いて閲覧・印刷できます。',
       done: 'HTMLページを開きます…'
     },
     text: {
