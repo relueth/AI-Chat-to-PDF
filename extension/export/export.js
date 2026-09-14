@@ -124,12 +124,19 @@
    */
   function preserveMathDataInContainer(root) {
     if (!root) return;
-    // 1. KaTeX 要素の annotation (生TeX) を退避
+    // 1. KaTeX 要素の annotation (生TeX) または data-tex を退避
     root.querySelectorAll('.katex, .katex-display').forEach((k) => {
       if (k.getAttribute('data-tex')) return;
       const ann = k.querySelector('annotation[encoding="application/x-tex"], annotation');
-      if (ann && ann.textContent.trim()) {
-        const raw = ann.textContent.trim();
+      let raw = ann && ann.textContent.trim() ? ann.textContent.trim() : '';
+      if (!raw) {
+        const alt = k.getAttribute('alttext') || k.getAttribute('aria-label');
+        if (alt && alt.trim()) raw = alt.trim();
+      }
+      if (!raw && k.querySelector('.katex-html')) {
+        raw = reverseParseKatexDom(k.querySelector('.katex-html')).trim();
+      }
+      if (raw) {
         k.setAttribute('data-tex', raw);
         // 子の .katex や 親の .katex-display にも両方付与
         const inner = k.querySelector('.katex');
@@ -162,6 +169,83 @@
     });
   }
 
+  /**
+   * レンダリング済みKaTeX DOM (.katex-html) から構造的に生TeXコードを復元
+   * 累乗(^2)、添字(_n)、分数(\frac)、関数(\sin, \cos)、平方根(\sqrt)を完全に保持
+   */
+  function reverseParseKatexDom(node) {
+    if (!node) return '';
+    if (node.nodeType === 3) {
+      return node.nodeValue || '';
+    }
+    if (node.nodeType !== 1) return '';
+
+    const el = node;
+    if (el.classList.contains('sr-only') || el.classList.contains('visually-hidden') || el.classList.contains('katex-mathml')) {
+      return '';
+    }
+
+    // 分数: .mfrac
+    if (el.classList.contains('mfrac')) {
+      const parts = [...el.children].filter((c) => !c.classList.contains('frac-line'));
+      if (parts.length >= 2) {
+        const num = reverseParseKatexDom(parts[0]).trim();
+        const den = reverseParseKatexDom(parts[1]).trim();
+        return `\\frac{${num}}{${den}}`;
+      }
+    }
+
+    // 平方根: .msqrt
+    if (el.classList.contains('msqrt')) {
+      const body = el.querySelector('.vlist-t, .svg-align, .root') || el;
+      return `\\sqrt{${reverseParseKatexDom(body).trim()}}`;
+    }
+
+    // 上付き・下付き添字: .msupsub
+    if (el.classList.contains('msupsub')) {
+      let sup = '';
+      let sub = '';
+      const rList = el.querySelectorAll('.vlist-r');
+      if (rList.length === 1) {
+        const topEl = rList[0].querySelector('[style*="top"]');
+        const st = topEl ? (topEl.getAttribute('style') || '') : '';
+        if (st.includes('top:-') || st.includes('top: -')) {
+          sup = reverseParseKatexDom(rList[0]).trim();
+        } else {
+          sub = reverseParseKatexDom(rList[0]).trim();
+        }
+      } else if (rList.length >= 2) {
+        sup = reverseParseKatexDom(rList[0]).trim();
+        sub = reverseParseKatexDom(rList[1]).trim();
+      } else {
+        sup = el.textContent.trim();
+      }
+
+      let res = '';
+      if (sub) res += `_{${sub}}`;
+      if (sup) res += `^{${sup}}`;
+      return res;
+    }
+
+    // 関数名: .mop (sin, cos, tan, log 等)
+    if (el.classList.contains('mop')) {
+      const name = el.textContent.trim();
+      const MATH_FUNCS = ['sin', 'cos', 'tan', 'cot', 'sec', 'csc', 'arcsin', 'arccos', 'arctan',
+                          'sinh', 'cosh', 'tanh', 'log', 'ln', 'lg', 'exp', 'det', 'dim', 'ker',
+                          'deg', 'gcd', 'hom', 'inf', 'sup', 'lim', 'max', 'min', 'arg'];
+      if (MATH_FUNCS.includes(name.toLowerCase())) {
+        return `\\${name} `;
+      }
+      return name;
+    }
+
+    let out = '';
+    for (const child of el.childNodes) {
+      out += reverseParseKatexDom(child);
+    }
+    return out;
+  }
+
   function sanitizeHtml(html) {
     const tpl = document.createElement('template');
     tpl.innerHTML = html;
@@ -173,7 +257,6 @@
 
     // 数式要素の生TeXコード (累乗^2、添字、分数等) を最優先で data-tex 属性に退避
     preserveMathDataInContainer(tpl.content);
-    tpl.content.querySelectorAll('annotation').forEach((n) => n.remove());
 
     tpl.content.querySelectorAll(
       '.visually-hidden, [class*="visually-hidden"], .cdk-visually-hidden, [class*="cdk-visually-hidden"], .sr-only, [class*="sr-only"]'
@@ -257,49 +340,87 @@
   }
 
   /**
-   * TeX文字列を正規化し、テキストモードのローマン体化や関数名補正を行う
-   * 1. sin, cos, tan, log 等の標準関数を \sin, \cos 等に補正 (テキストモードでのローマン体・立体化)
-   *    累乗(^2)や添字(_n)がある場合は結合を壊さず維持
-   * 2. (Cは積分定数) 等の日本語注釈を \text{(Cは積分定数)} に補正 (英字Cも日本語もローマン体化)
+   * TeX文字列を安全に正規化
+   * - HTMLエンティティ (&lt;, &gt;, &amp; 等) の安全なデコード
+   * - KaTeX 非対応/MathJax固有コマンドの互換変換 (\mbox -> \text, \require の除去, \cr -> \\, \bm -> \boldsymbol)
+   * - \text{...} 等のテキストグループを完全保護し、単語中の文字 (constantのtan, usingのsin等) の誤爆を100%防止
+   * - 未置換の独立した数学関数 (sin, cos, tan, log 等) の補正
+   * - 環境外の & 記号を持つ数式の aligned 自動補正
    */
   function normalizeTex(tex) {
     if (!tex) return '';
-    let res = tex;
+    let res = String(tex);
 
-    const funcs = 'sinh|cosh|tanh|coth|sin|cos|tan|cot|sec|csc|log|ln|lg|lim|exp|max|min|det|deg|dim|gcd|hom|inf|ker|Pr|sup';
+    // 1. HTML エンティティの安全なデコード
+    res = res.replace(/&lt;/g, '<')
+             .replace(/&gt;/g, '>')
+             .replace(/&quot;/g, '"')
+             .replace(/&#39;|&apos;/g, "'")
+             .replace(/&nbsp;/g, ' ')
+             .replace(/\u00a0/g, ' ')
+             .replace(/&plusmn;/g, '\\pm ')
+             .replace(/&times;/g, '\\times ')
+             .replace(/&divide;/g, '\\div ')
+             .replace(/&le;/g, '\\le ')
+             .replace(/&ge;/g, '\\ge ')
+             .replace(/&ne;/g, '\\neq ')
+             .replace(/&infin;/g, '\\infty ')
+             .replace(/&alpha;/g, '\\alpha ')
+             .replace(/&beta;/g, '\\beta ')
+             .replace(/&gamma;/g, '\\gamma ')
+             .replace(/&theta;/g, '\\theta ')
+             .replace(/&pi;/g, '\\pi ')
+             .replace(/&amp;&amp;/g, '\\&\\&')
+             .replace(/&amp;/g, '\\&');
 
-    // 1. 直前にバックスラッシュのない標準数学関数 (sin, cos, tan, log 等) を \sin, \cos 等に補正
-    // 直後に ^ (累乗指数) や _ (添字) がある場合はスペースを挟まず \sin^2 x のように結合を保持
-    const fnSupRegex = new RegExp('(^|[^a-zA-Z\\\\])(' + funcs + ')(?=[\\^_])', 'g');
-    res = res.replace(fnSupRegex, (match, prefix, fn) => prefix + '\\' + fn);
+    // 2. KaTeX 非対応/不要マクロの互換変換
+    res = res.replace(/\\require\{[^}]*\}/g, '');
+    res = res.replace(/\\mbox\{([^}]*)\}/g, '\\text{$1}');
+    res = res.replace(/\\cr\b/g, '\\\\');
+    res = res.replace(/\\bm\{([^}]*)\}/g, '\\boldsymbol{$1}');
 
-    // その他の通常引数の場合 (例: sin2x -> \sin 2x, 2sinxcosx -> 2\sin x \cos x)
-    const fnRegex = new RegExp('(^|[^a-zA-Z\\\\])(' + funcs + ')(?=[0-9a-zA-Z\\s+=_\\-)]|$)', 'g');
-    res = res.replace(fnRegex, (match, prefix, fn) => prefix + '\\' + fn + ' ');
+    // 3. \text{...}, \mathrm{...}, \mathbf{...} 等のテキスト領域を一時退避して保護
+    // (英単語 constant, distance, using, maximum 等が関数名として誤置換されるのを完全に防止)
+    const textBlocks = [];
+    res = res.replace(/\\(?:text|mathrm|textrm|textnormal|textbf|textit|mathbf)\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g, (match) => {
+      const placeholder = `___SAFE_TXT_BLOCK_${textBlocks.length}___`;
+      textBlocks.push(match);
+      return placeholder;
+    });
 
-    // 連続した変数と関数 (例: xcosx -> x \cos x)
-    const fnTightRegex = new RegExp('(?<=[a-z])(' + funcs + ')(?=[0-9a-zA-Z\\s+=_\\-)]|$)', 'g');
-    res = res.replace(fnTightRegex, (match, fn) => ' \\' + fn + ' ');
+    // 4. 数式環境外の配置記号 & の安全保護 (KaTeX parse error 回避)
+    // 独立した & (アライメントタブ) を含む複数行数式が \begin{...} で囲まれていない場合、\begin{aligned} で包む
+    const hasUnescapedTab = /(?<!\\)&/.test(res);
+    if (hasUnescapedTab && !/\\begin\{(?:aligned|align|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|cases|gather)\}/.test(res)) {
+      res = `\\begin{aligned}${res}\\end{aligned}`;
+    }
 
-    // 2. 数式中の注釈 (Cは積分定数) などの日本語括弧書きを \text{(...)} に補正
-    // 例: (C\text{は積分定数}) や (Cは積分定数) を \text{(Cは積分定数)} に統一
-    // これにより、英字 C も日本語もすべてローマン体（立体・直立）として描画される
+    // 5. 直前にバックスラッシュのない独立した標準数学関数 (sin, cos, tan, log 等) を \sin, \cos 等に安全補正
+    // 複合関数 (arcsin, arccos, sinh 等) を優先判定
+    const funcs = [
+      'arcsin', 'arccos', 'arctan', 'arccot', 'arcsec', 'arccsc',
+      'sinh', 'cosh', 'tanh', 'coth', 'sech', 'csch',
+      'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
+      'log', 'ln', 'lg', 'exp', 'det', 'dim', 'ker',
+      'deg', 'gcd', 'hom', 'inf', 'sup', 'lim', 'max', 'min', 'arg', 'Pr'
+    ];
+    const fnPattern = funcs.join('|');
+    // 前後に英字やバックスラッシュが存在しない、完全に独立したトークンのみを対象とする
+    const fnRegex = new RegExp(`(?<![a-zA-Z\\\\])(${fnPattern})(?![a-zA-Z])`, 'g');
+    res = res.replace(fnRegex, '\\$1');
+
+    // 6. 数式中の日本語括弧書き (Cは積分定数) などの注釈を \text{(...)} に補正
     res = res.replace(/(\([^)]*[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]+[^)]*\))/g, (m) => {
       const plain = m.replace(/\\(?:text|mathrm|textrm|textnormal)\{([^}]*)\}/g, '$1');
       return ' \\text{' + plain + '}';
     });
 
-    // 3. 数式内で \text{} に入っていない孤立した日本語文字列を \text{} で包む
-    res = res.replace(/([\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]+)/g, (match, cjk, offset, full) => {
-      const before = full.slice(0, offset);
-      const lastOpen = before.lastIndexOf('\\text{');
-      if (lastOpen !== -1) {
-        const sub = before.slice(lastOpen);
-        const openCount = (sub.match(/\{/g) || []).length;
-        const closeCount = (sub.match(/\}/g) || []).length;
-        if (openCount > closeCount) return cjk;
-      }
-      return '\\text{' + cjk + '}';
+    // 7. 退避されていない孤立した日本語文字列を \text{} で包む
+    res = res.replace(/([\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]+)/g, '\\text{$1}');
+
+    // 8. 保護したテキストブロックの復元
+    textBlocks.forEach((block, idx) => {
+      res = res.replace(`___SAFE_TXT_BLOCK_${idx}___`, block);
     });
 
     return res.replace(/  +/g, ' ').trim();
@@ -325,16 +446,26 @@
 
     // 3. alttext, aria-label, data-original-tex, data-latex, data-math
     const alt = el.getAttribute('alttext') || el.getAttribute('data-original-tex') ||
-                el.getAttribute('data-latex') || el.getAttribute('data-math');
+                el.getAttribute('data-latex') || el.getAttribute('data-math') || el.getAttribute('aria-label');
     if (alt && alt.trim()) return alt.trim();
 
-    // 4. 重大: すでにレンダリングされた KaTeX 要素 (.katex, .katex-display, .katex-html) や
-    // MathJax (mjx-container) である場合、生TeX属性が無い限り、絶対に textContent を TeX コードとして扱ってはならない！
-    // (textContent では上付き添字 ^2 や分数 \frac が抜け落ちて sin2x や 12 に平坦化されるため)
+    const childAlt = el.querySelector('[alttext], [data-original-tex], [data-latex], [data-math]');
+    if (childAlt) {
+      const cAlt = childAlt.getAttribute('alttext') || childAlt.getAttribute('data-original-tex') ||
+                   childAlt.getAttribute('data-latex') || childAlt.getAttribute('data-math');
+      if (cAlt && cAlt.trim()) return cAlt.trim();
+    }
+
+    // 4. すでにレンダリングされた KaTeX 要素 (.katex, .katex-display, .katex-html) からの構造的逆パース
     if (el.classList.contains('katex') || el.classList.contains('katex-display') ||
-        el.querySelector('.katex-html') || el.closest('.katex') || el.closest('.katex-display') ||
-        el.tagName === 'MJX-CONTAINER' || el.querySelector('mjx-container')) {
-      return ''; // 安全のため空文字を返し、破壊的な上書き再描画を完全に防止
+        el.querySelector('.katex-html') || el.closest('.katex') || el.closest('.katex-display')) {
+      const parsed = reverseParseKatexDom(el.querySelector('.katex-html') || el);
+      if (parsed && parsed.trim()) return parsed.trim();
+      return ''; // 安全のため空文字を返し、壊れた平坦化テキストの上書きを防止
+    }
+
+    if (el.tagName === 'MJX-CONTAINER' || el.querySelector('mjx-container')) {
+      return '';
     }
 
     // 5. 通常の未レンダリングテキスト要素 ($...$, $$...$$, \[...\], \(...\)) の場合のみ textContent から抽出
@@ -350,7 +481,18 @@
   function renderWithKaTeX(container) {
     if (!container) return;
 
-    // 1. 既存の MathJax (mjx-container) や math-holder を KaTeX で再レンダリング
+    const KATEX_OPTIONS_BASE = {
+      output: 'html',
+      throwOnError: false,
+      strict: false,
+      trust: true,
+      macros: {
+        '\\mbox': '\\text{#1}',
+        '\\bm': '\\boldsymbol{#1}'
+      }
+    };
+
+    // 1. MathJax 由来の要素 (mjx-container) や math-holder を KaTeX でレンダリング
     const mjxContainers = container.querySelectorAll('mjx-container, .math-holder');
     for (const mjx of mjxContainers) {
       const isDisplay = mjx.getAttribute('display') === 'true' ||
@@ -366,44 +508,43 @@
           target.setAttribute('data-tex', normTex);
           target.setAttribute('data-display', isDisplay ? 'true' : 'false');
           window.katex.render(normTex, target, {
-            displayMode: isDisplay,
-            output: 'html',
-            throwOnError: false
+            ...KATEX_OPTIONS_BASE,
+            displayMode: isDisplay
           });
           mjx.replaceWith(target);
         } catch (_) {}
       }
     }
 
-    // 2. 既存の KaTeX 要素 (.katex-display, .katex) のテキストモード補正 (ローマン体化)
-    // 注意: rawTex (生TeXコード) が確実に取得できた場合のみ正規化して再描画する。
-    // rawTex が存在しない場合は、元サイトが正しくレンダリングしたDOMなので、上書き破壊せずそのまま保持する！
+    // 2. 既存の KaTeX 要素 (.katex-display, .katex) は元サイトで美しく組版されているため原則保護
+    // 中身が空または未描画で生TeXがある場合のみ再描画を補完
     const existingKatex = container.querySelectorAll('.katex-display, .katex');
     for (const ek of existingKatex) {
       if (ek.closest('.katex-display') && !ek.classList.contains('katex-display')) continue;
+      // 内部に正常な .katex-html が存在する場合はそのまま保護 (上書きによる崩壊を完全防止)
+      if (ek.querySelector('.katex-html') && ek.textContent.trim()) {
+        continue;
+      }
       const isDisplay = ek.classList.contains('katex-display');
       const rawTex = getTexFromMathElement(ek);
-      if (rawTex) {
+      if (rawTex && typeof window.katex === 'object' && typeof window.katex.render === 'function') {
         const normTex = normalizeTex(rawTex);
-        // TeXコードが補正された場合は再描画してローマン体を適用
-        if (normTex !== rawTex && typeof window.katex === 'object' && typeof window.katex.render === 'function') {
-          try {
-            const target = document.createElement(isDisplay ? 'div' : 'span');
-            target.className = isDisplay ? 'katex-display' : 'katex-inline';
-            target.setAttribute('data-tex', normTex);
-            target.setAttribute('data-display', isDisplay ? 'true' : 'false');
-            window.katex.render(normTex, target, {
-              displayMode: isDisplay,
-              output: 'html',
-              throwOnError: false
-            });
-            ek.replaceWith(target);
-          } catch (_) {}
-        }
+        try {
+          const target = document.createElement(isDisplay ? 'div' : 'span');
+          target.className = isDisplay ? 'katex-display' : 'katex-inline';
+          target.setAttribute('data-tex', normTex);
+          target.setAttribute('data-display', isDisplay ? 'true' : 'false');
+          window.katex.render(normTex, target, {
+            ...KATEX_OPTIONS_BASE,
+            displayMode: isDisplay
+          });
+          ek.replaceWith(target);
+        } catch (_) {}
       }
     }
 
-    // 3. auto-render: テキストノード内の $...$, $$...$$, \(...\), \[...\] を数式に変換
+    // 3. auto-render: テキストノード内の $...$, $$...$$, \(...\), \[...\] を数式に安全変換
+    // 注意: code, pre, button 等のコードブロックやUI要素は除外してコード破損を完全防止
     if (typeof window.renderMathInElement === 'function') {
       try {
         window.renderMathInElement(container, {
@@ -414,20 +555,28 @@
             { left: '\\(', right: '\\)', display: false },
             { left: '\\begin{equation}', right: '\\end{equation}', display: true },
             { left: '\\begin{align}', right: '\\end{align}', display: true },
+            { left: '\\begin{aligned}', right: '\\end{aligned}', display: true },
             { left: '\\begin{alignat}', right: '\\end{alignat}', display: true },
             { left: '\\begin{gather}', right: '\\end{gather}', display: true },
             { left: '\\begin{CD}', right: '\\end{CD}', display: true },
             { left: '\\begin{matrix}', right: '\\end{matrix}', display: true },
             { left: '\\begin{pmatrix}', right: '\\end{pmatrix}', display: true },
-            { left: '\\begin{bmatrix}', right: '\\end{bmatrix}', display: true }
+            { left: '\\begin{bmatrix}', right: '\\end{bmatrix}', display: true },
+            { left: '\\begin{cases}', right: '\\end{cases}', display: true }
           ],
           ignoredClasses: [
             'katex', 'katex-display', 'katex-mathml', 'katex-html',
             'MathJax', 'mjx-container', 'sr-only', 'visually-hidden'
           ],
-          ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'annotation', 'math', 'svg'],
+          ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'annotation', 'math', 'svg', 'button', 'input', 'select'],
           output: 'html',
-          throwOnError: false
+          throwOnError: false,
+          strict: false,
+          trust: true,
+          macros: {
+            '\\mbox': '\\text{#1}',
+            '\\bm': '\\boldsymbol{#1}'
+          }
         });
       } catch (e) {
         console.warn('KaTeX auto-render warning:', e);
@@ -454,9 +603,8 @@
           target.setAttribute('data-tex', normTex);
           target.setAttribute('data-display', isDisplay ? 'true' : 'false');
           window.katex.render(normTex, target, {
-            displayMode: isDisplay,
-            output: 'html',
-            throwOnError: false
+            ...KATEX_OPTIONS_BASE,
+            displayMode: isDisplay
           });
           el.replaceWith(target);
         } catch (_) { /* noop */ }
@@ -468,43 +616,58 @@
   async function renderWithMathJax(container) {
     if (!container) return;
 
-    // 1. 既存の KaTeX 要素 (.katex-display, .katex) を MathJax が認識可能な要素に変換
-    // ディスプレイ数式: .katex-display
-    const katexDisplays = container.querySelectorAll('.katex-display');
-    for (const kd of katexDisplays) {
-      const rawTex = getTexFromMathElement(kd);
-      if (rawTex) {
-        const normTex = normalizeTex(rawTex);
-        const div = document.createElement('div');
-        div.className = 'math-holder math-display';
-        div.setAttribute('data-tex', normTex);
-        div.setAttribute('data-display', 'true');
-        div.textContent = `\\[${normTex}\\]`;
-        kd.replaceWith(div);
+    // 1. 既存の数式要素 (KaTeX, MathML, .math, math-holder 等) を MathJax デリミタ形式 (math-holder) に確実に一括変換
+    const allMathCandidates = container.querySelectorAll(
+      '.katex-display, [class*="katex-display"], .katex, [class*="katex"], .math-display, .math-inline, [class*="math-display"], [class*="math-inline"], [class*="language-math"], [class*="language-latex"], math, .math-holder, [data-tex], [data-latex], [data-math]'
+    );
+
+    // 最外層の数式要素のみを特定 (入れ子の子要素を重複置換しない)
+    const outermost = [];
+    for (const el of allMathCandidates) {
+      let isDescendant = false;
+      for (const parent of outermost) {
+        if (parent.contains(el) && parent !== el) {
+          isDescendant = true;
+          break;
+        }
+      }
+      if (!isDescendant) {
+        outermost.push(el);
       }
     }
 
-    // インライン数式: .katex
-    const katexInlines = container.querySelectorAll('.katex');
-    for (const ki of katexInlines) {
-      if (ki.closest('.katex-display')) continue;
-      const rawTex = getTexFromMathElement(ki);
-      if (rawTex) {
-        const normTex = normalizeTex(rawTex);
-        const span = document.createElement('span');
-        span.className = 'math-holder math-inline';
-        span.setAttribute('data-tex', normTex);
-        span.setAttribute('data-display', 'false');
-        span.textContent = `\\(${normTex}\\)`;
-        ki.replaceWith(span);
+    for (const el of outermost) {
+      if (el.querySelector('mjx-container') || el.classList.contains('MathJax')) continue;
+
+      const isDisplay = el.classList.contains('katex-display') ||
+                        el.matches('[class*="katex-display"]') ||
+                        el.classList.contains('math-display') ||
+                        el.matches('[class*="math-display"]') ||
+                        el.getAttribute('data-display') === 'true' ||
+                        el.getAttribute('display') === 'true' ||
+                        el.tagName === 'DIV';
+
+      let rawTex = getTexFromMathElement(el);
+      if (!rawTex) {
+        rawTex = reverseParseKatexDom(el);
       }
+      if (!rawTex) continue;
+
+      const normTex = normalizeTex(rawTex);
+      const target = document.createElement(isDisplay ? 'div' : 'span');
+      target.className = `math-holder ${isDisplay ? 'math-display' : 'math-inline'}`;
+      target.setAttribute('data-tex', normTex);
+      target.setAttribute('data-display', isDisplay ? 'true' : 'false');
+      target.textContent = isDisplay ? `\\[${normTex}\\]` : `\\(${normTex}\\)`;
+
+      el.replaceWith(target);
     }
 
     // 2. 未区切りTeX要素 (.math, [data-tex] 等) を MathJax デリミタ形式に変換
-    const candidates = container.querySelectorAll(
+    const remainingCandidates = container.querySelectorAll(
       '.math, [class*="math-inline"], [class*="math-display"], [class*="language-math"], [class*="language-latex"], [data-tex]'
     );
-    for (const el of candidates) {
+    for (const el of remainingCandidates) {
       if (el.querySelector('mjx-container') || el.classList.contains('MathJax') || el.classList.contains('math-holder')) continue;
       const rawTex = getTexFromMathElement(el);
       if (!rawTex) continue;

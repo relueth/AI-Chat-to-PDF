@@ -539,22 +539,38 @@ annotation,
   font-style: normal !important;
 }
 
-/* ディスプレイ数式 */
+/* ディスプレイ数式: 折り返しによる分数・添字の崩壊を完全防止し、画面では横スクロールで綺麗に表示 */
 .msg-body .katex-display {
-  margin: 1.1em 0;
+  display: block;
+  text-align: center;
+  margin: 1.2em 0;
   padding: 6px 0;
   overflow-x: auto;           /* 画面では横スクロール許容 */
   overflow-y: hidden;
   break-inside: avoid-page;   /* ディスプレイ数式の改ページ防止 */
+  -webkit-overflow-scrolling: touch;
 }
 .msg-body .katex-display > .katex {
+  display: inline-block;
   font-size: 1.18em;
-  white-space: normal;        /* 長い数式は内部で折り返し可 */
+  white-space: nowrap !important; /* 絶対に折り返さない (分子・分母や添字の崩れを完全防止) */
+  text-align: initial;
 }
 
 /* Claude等で使われる \\[ ... \\] や \\( \\) の生テキスト残存防止:
    KaTeX未レンダリングの場合も可読性を保つ */
 .msg-body .math-fallback { font-family: "Cambria Math", serif; }
+
+.math-holder.math-display {
+  display: block;
+  text-align: center;
+  margin: 1.1em 0;
+  font-family: "Cambria Math", KaTeX_Math, serif;
+}
+.math-holder.math-inline {
+  display: inline;
+  font-family: "Cambria Math", KaTeX_Math, serif;
+}
 
 /* ============================================================
    数式 (MathJax) - MathJax選択時の組版・印刷スタイル

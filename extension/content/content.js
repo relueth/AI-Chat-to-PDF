@@ -741,51 +741,138 @@
   ];
 
   /**
+   * レンダリング済みKaTeX DOM (.katex-html) から構造的に生TeXコードを復元
+   * 累乗(^2)、添字(_n)、分数(\frac)、関数(\sin, \cos)、平方根(\sqrt)を完全に保持
+   */
+  function reverseParseKatexDom(node) {
+    if (!node) return '';
+    if (node.nodeType === 3) {
+      return node.nodeValue || '';
+    }
+    if (node.nodeType !== 1) return '';
+
+    const el = node;
+    if (el.classList.contains('sr-only') || el.classList.contains('visually-hidden') || el.classList.contains('katex-mathml')) {
+      return '';
+    }
+
+    // 分数: .mfrac
+    if (el.classList.contains('mfrac')) {
+      const parts = [...el.children].filter((c) => !c.classList.contains('frac-line'));
+      if (parts.length >= 2) {
+        const num = reverseParseKatexDom(parts[0]).trim();
+        const den = reverseParseKatexDom(parts[1]).trim();
+        return `\\frac{${num}}{${den}}`;
+      }
+    }
+
+    // 平方根: .msqrt
+    if (el.classList.contains('msqrt')) {
+      const body = el.querySelector('.vlist-t, .svg-align, .root') || el;
+      return `\\sqrt{${reverseParseKatexDom(body).trim()}}`;
+    }
+
+    // 上付き・下付き添字: .msupsub
+    if (el.classList.contains('msupsub')) {
+      let sup = '';
+      let sub = '';
+      const rList = el.querySelectorAll('.vlist-r');
+      if (rList.length === 1) {
+        const topEl = rList[0].querySelector('[style*="top"]');
+        const st = topEl ? (topEl.getAttribute('style') || '') : '';
+        if (st.includes('top:-') || st.includes('top: -')) {
+          sup = reverseParseKatexDom(rList[0]).trim();
+        } else {
+          sub = reverseParseKatexDom(rList[0]).trim();
+        }
+      } else if (rList.length >= 2) {
+        sup = reverseParseKatexDom(rList[0]).trim();
+        sub = reverseParseKatexDom(rList[1]).trim();
+      } else {
+        sup = el.textContent.trim();
+      }
+
+      let res = '';
+      if (sub) res += `_{${sub}}`;
+      if (sup) res += `^{${sup}}`;
+      return res;
+    }
+
+    // 関数名: .mop (sin, cos, tan, log 等)
+    if (el.classList.contains('mop')) {
+      const name = el.textContent.trim();
+      const MATH_FUNCS = ['sin', 'cos', 'tan', 'cot', 'sec', 'csc', 'arcsin', 'arccos', 'arctan',
+                          'sinh', 'cosh', 'tanh', 'log', 'ln', 'lg', 'exp', 'det', 'dim', 'ker',
+                          'deg', 'gcd', 'hom', 'inf', 'sup', 'lim', 'max', 'min', 'arg'];
+      if (MATH_FUNCS.includes(name.toLowerCase())) {
+        return `\\${name} `;
+      }
+      return name;
+    }
+
+    let out = '';
+    for (const child of el.childNodes) {
+      out += reverseParseKatexDom(child);
+    }
+    return out;
+  }
+
+  /**
    * 数式要素 (KaTeX, MathJax, MathML 等) から生TeXコードを安全に抽出し、
    * data-tex 属性に永続退避する (累乗^2、添字_n、分数等の脱落を完全防止)
    */
   function preserveAllMathData(root) {
     if (!root) return;
-    // 1. KaTeX 要素の annotation (生TeX)
-    root.querySelectorAll('.katex, .katex-display').forEach((k) => {
-      if (k.getAttribute('data-tex')) return;
-      const ann = k.querySelector('annotation[encoding="application/x-tex"], annotation');
-      if (ann && ann.textContent.trim()) {
-        const raw = ann.textContent.trim();
-        k.setAttribute('data-tex', raw);
-        const innerKatex = k.querySelector('.katex');
-        if (innerKatex && !innerKatex.getAttribute('data-tex')) innerKatex.setAttribute('data-tex', raw);
-        const parentDisplay = k.closest('.katex-display');
+
+    // 1. MathML annotation (生TeX) または direct attributes
+    const mathElements = root.querySelectorAll(
+      '.katex-display, [class*="katex-display"], .katex, [class*="katex"], .math-display, .math-inline, [class*="math-display"], [class*="math-inline"], [class*="language-math"], [class*="language-latex"], math, mjx-container, [data-tex], [data-latex], [data-math]'
+    );
+
+    for (const el of mathElements) {
+      if (el.getAttribute('data-tex')) continue;
+
+      let raw = '';
+      // A. 直近の属性
+      const attrTex = el.getAttribute('data-tex') || el.getAttribute('data-latex') || el.getAttribute('data-math') ||
+                      el.getAttribute('data-original-tex') || el.getAttribute('alttext') || el.getAttribute('aria-label');
+      if (attrTex && attrTex.trim()) {
+        raw = attrTex.trim();
+      }
+
+      // B. annotation タグ
+      if (!raw) {
+        const ann = el.querySelector('annotation[encoding="application/x-tex"], annotation');
+        if (ann && ann.textContent.trim()) {
+          raw = ann.textContent.trim();
+        }
+      }
+
+      // C. MathML alttext
+      if (!raw) {
+        const mathEl = el.querySelector('math') || (el.tagName.toLowerCase() === 'math' ? el : null);
+        if (mathEl) {
+          const mAlt = mathEl.getAttribute('alttext');
+          if (mAlt && mAlt.trim()) raw = mAlt.trim();
+        }
+      }
+
+      // D. KaTeX HTML からの構造的復元
+      if (!raw && (el.classList.contains('katex') || el.classList.contains('katex-display') || el.querySelector('.katex-html'))) {
+        const katexHtml = el.querySelector('.katex-html') || el;
+        const parsed = reverseParseKatexDom(katexHtml).trim();
+        if (parsed) raw = parsed;
+      }
+
+      if (raw) {
+        el.setAttribute('data-tex', raw);
+        // 子の .katex や 親の display コンテナにも一貫して付与
+        const inner = el.querySelector('.katex');
+        if (inner && !inner.getAttribute('data-tex')) inner.setAttribute('data-tex', raw);
+        const parentDisplay = el.closest('.katex-display, [class*="katex-display"]');
         if (parentDisplay && !parentDisplay.getAttribute('data-tex')) parentDisplay.setAttribute('data-tex', raw);
       }
-    });
-
-    // 2. MathJax (mjx-container)
-    root.querySelectorAll('mjx-container').forEach((mjx) => {
-      if (mjx.getAttribute('data-tex')) return;
-      const alt = mjx.getAttribute('alttext') || mjx.getAttribute('aria-label');
-      if (alt && alt.trim()) {
-        mjx.setAttribute('data-tex', alt.trim());
-      } else {
-        const ann = mjx.querySelector('annotation');
-        if (ann && ann.textContent.trim()) {
-          mjx.setAttribute('data-tex', ann.textContent.trim());
-        }
-      }
-    });
-
-    // 3. その他 data-math, data-latex, math タグ
-    root.querySelectorAll('[data-math], [data-latex], [data-tex-source], [class*="math-tex"], math').forEach((el) => {
-      const tex = el.getAttribute('data-math') || el.getAttribute('data-latex') || el.getAttribute('data-tex-source');
-      if (tex && !el.getAttribute('data-tex')) {
-        el.setAttribute('data-tex', tex.trim());
-      } else if (el.tagName.toLowerCase() === 'math' && !el.getAttribute('data-tex')) {
-        const ann = el.querySelector('annotation');
-        if (ann && ann.textContent.trim()) {
-          el.setAttribute('data-tex', ann.textContent.trim());
-        }
-      }
-    });
+    }
   }
 
   function sanitizeClone(root) {
@@ -897,10 +984,9 @@
       }
     });
 
-    // MathML annotation (生TeXテキスト注釈) を親要素・子要素の data-tex 属性に確実に退避してから安全に除去
+    // MathML annotation (生TeXテキスト注釈) を親要素・子要素の data-tex 属性に確実に退避
     // これにより、MathJax切替時やテキスト出力時に累乗(^2)や添字を保持した高精度な生TeXコードを再利用できる
     preserveAllMathData(clone);
-    clone.querySelectorAll('annotation').forEach((n) => n.remove());
 
     // ChatGPT等の添付ファイルカード内の仕切り線 (w-px, border-l, border-r などの空要素) を除去
     clone.querySelectorAll(
