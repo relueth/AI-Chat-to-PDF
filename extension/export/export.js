@@ -171,7 +171,7 @@
 
   /**
    * レンダリング済みKaTeX DOM (.katex-html) から構造的に生TeXコードを復元
-   * 累乗(^2)、添字(_n)、分数(\frac)、関数(\sin, \cos)、平方根(\sqrt)を完全に保持
+   * 累乗(^2)、添字(_n)、分数(\frac)、関数(\sin, \cos)、平方根(\sqrt)、表・行列(\begin{array})を完全に保持
    */
   function reverseParseKatexDom(node) {
     if (!node) return '';
@@ -183,6 +183,59 @@
     const el = node;
     if (el.classList.contains('sr-only') || el.classList.contains('visually-hidden') || el.classList.contains('katex-mathml')) {
       return '';
+    }
+
+    // 表・行列: .mtable (ChatGPT / Claude 等の表組・囲み枠・array環境を二次元配列として完全復元)
+    if (el.classList.contains('mtable')) {
+      let colFormat = '';
+      const columns = [];
+      for (const child of el.children) {
+        if (child.classList.contains('vertical-separator')) {
+          colFormat += '|';
+        } else if (child.className && String(child.className).includes('col-align-')) {
+          let align = 'c';
+          if (child.classList.contains('col-align-l')) align = 'l';
+          else if (child.classList.contains('col-align-r')) align = 'r';
+          colFormat += align;
+
+          const cells = [];
+          const rowSpans = child.querySelectorAll('.vlist > span');
+          for (const rs of rowSpans) {
+            const contentNodes = [...rs.childNodes].filter((cn) => !cn.classList || !cn.classList.contains('pstrut'));
+            if (contentNodes.length > 0) {
+              const cellTex = contentNodes.map((cn) => reverseParseKatexDom(cn)).join('').trim();
+              if (cellTex) {
+                cells.push(cellTex);
+              }
+            }
+          }
+          columns.push(cells);
+        }
+      }
+
+      if (columns.length > 0) {
+        const maxRows = Math.max(...columns.map((c) => c.length));
+        const rows = [];
+        for (let r = 0; r < maxRows; r++) {
+          const rowCells = [];
+          for (let c = 0; c < columns.length; c++) {
+            rowCells.push(columns[c][r] || '');
+          }
+          rows.push(rowCells.join(' & '));
+        }
+
+        const parentMath = el.closest('.katex-display, .katex') || el.parentElement;
+        const hasHline = parentMath && parentMath.querySelector('.katex-hline');
+        const hasBorder = colFormat.includes('|') || hasHline;
+
+        if (hasBorder) {
+          // 囲み枠付きテーブル: \begin{array}{|c|c|} \hline 問 & 答え \\ \hline 1 & ... \\ \hline \end{array}
+          const lines = rows.map((r, idx) => (idx === 0 ? `${r} \\\\ \\hline` : `${r} \\\\`));
+          return `\\begin{array}{${colFormat || 'cc'}}\\hline ${lines.join(' ')} \\hline\\end{array}`;
+        } else {
+          return `\\begin{matrix} ${rows.join(' \\\\ ')} \\end{matrix}`;
+        }
+      }
     }
 
     // 分数: .mfrac
@@ -237,6 +290,26 @@
         return `\\${name} `;
       }
       return name;
+    }
+
+    // 日本語・CJKフォールバック文字
+    if (el.classList.contains('cjk_fallback')) {
+      const cjk = el.textContent.trim();
+      if (cjk) return `\\text{${cjk}}`;
+    }
+
+    // 特殊数学記号の復元
+    const t = el.textContent.trim();
+    if (el.children.length === 0) {
+      if (t === '⊗') return '\\otimes ';
+      if (t === '×') return '\\times ';
+      if (t === '÷') return '\\div ';
+      if (t === '±') return '\\pm ';
+      if (t === '≤') return '\\le ';
+      if (t === '≥') return '\\ge ';
+      if (t === '≠') return '\\neq ';
+      if (t === '∞') return '\\infty ';
+      if (t === '·') return '\\cdot ';
     }
 
     let out = '';
@@ -486,6 +559,7 @@
       throwOnError: false,
       strict: false,
       trust: true,
+      minRuleThickness: 0.06,
       macros: {
         '\\mbox': '\\text{#1}',
         '\\bm': '\\boldsymbol{#1}'
@@ -573,6 +647,7 @@
           throwOnError: false,
           strict: false,
           trust: true,
+          minRuleThickness: 0.06,
           macros: {
             '\\mbox': '\\text{#1}',
             '\\bm': '\\boldsymbol{#1}'

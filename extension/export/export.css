@@ -539,14 +539,20 @@ annotation,
   font-style: normal !important;
 }
 
-/* ディスプレイ数式: 折り返しによる分数・添字の崩壊を完全防止し、画面では横スクロールで綺麗に表示 */
+/* KaTeX内部要素の box-sizing リセット (外部の * { box-sizing: border-box } による線幅・テーブル寸法の狂いを完全防止) */
+.katex,
+.katex * {
+  box-sizing: content-box !important;
+}
+
+/* ディスプレイ数式: 折り返しによる分数・添字の崩壊を防止し、外枠・上下線(hline)・縦線(vertical-separator)を完全に表示 */
 .msg-body .katex-display {
   display: block;
   text-align: center;
   margin: 1.2em 0;
-  padding: 6px 0;
+  padding: 10px 8px;          /* 境界線・枠線のクリップ防止用マージン */
   overflow-x: auto;           /* 画面では横スクロール許容 */
-  overflow-y: hidden;
+  overflow-y: visible;        /* 上下の横線(hline)や添字のクリップを完全防止 */
   break-inside: avoid-page;   /* ディスプレイ数式の改ページ防止 */
   -webkit-overflow-scrolling: touch;
 }
@@ -555,6 +561,31 @@ annotation,
   font-size: 1.18em;
   white-space: nowrap !important; /* 絶対に折り返さない (分子・分母や添字の崩れを完全防止) */
   text-align: initial;
+  overflow: visible !important;
+}
+
+/* KaTeX 表・行列 (array / mtable) の枠線 (hline) と縦線 (vertical-separator) の完全描画保証 */
+.katex .katex-hline {
+  border-bottom-style: solid !important;
+  border-bottom-color: currentColor !important;
+  border-bottom-width: max(1px, 0.05em) !important;
+  display: inline-block !important;
+  width: 100% !important;
+  min-height: 1px !important;
+  visibility: visible !important;
+}
+.katex .mtable .vertical-separator {
+  display: inline-block !important;
+  min-width: 1px !important;
+  border-right-style: solid !important;
+  border-right-color: currentColor !important;
+  border-right-width: max(1px, 0.05em) !important;
+  visibility: visible !important;
+}
+.katex .mtable {
+  display: inline-block !important;
+  vertical-align: middle;
+  padding: 1px 2px;
 }
 
 /* Claude等で使われる \\[ ... \\] や \\( \\) の生テキスト残存防止:
