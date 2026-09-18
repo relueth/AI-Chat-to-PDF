@@ -28,6 +28,18 @@
             <option value="mathjax">MathJax</option>
           </select>
         </div>
+        <div class="engine-select-wrap" title="PDF・HTML出力時のデザインテンプレートを変更します">
+          <label for="select-layout-theme" class="engine-label">レイアウト:</label>
+          <select id="select-layout-theme" class="engine-select">
+            <option value="theme-default" selected>標準</option>
+            <option value="theme-academic">技術・学術レポート</option>
+            <option value="theme-document">公式ドキュメント</option>
+            <option value="theme-note">ノート</option>
+            <option value="theme-blog">ブログ</option>
+            <option value="theme-dialogue">対話形式の解説風</option>
+            <option value="theme-custom">カスタム (外部読込)...</option>
+          </select>
+        </div>
         <button id="btn-print" class="tbtn tbtn-primary">PDFとして保存 (印刷)</button>
         <button id="btn-dl-html" class="tbtn">HTMLを保存</button>
         <button id="btn-dl-text" class="tbtn">テキストを保存</button>
@@ -85,6 +97,47 @@
       <span>Exported by AI Chat to PDF Extension</span>
     </footer>
   </main>
+
+  <!-- カスタムレイアウト (外部CSS/HTML) インポートモーダル (印刷時は非表示) -->
+  <div id="custom-layout-modal" class="custom-modal no-print" style="display: none;">
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 class="modal-title">カスタムレイアウト (外部CSS) の読み込み</h2>
+        <button type="button" class="modal-close" id="modal-close" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          作成した <code>.css</code> ファイルをアップロードするか、CSSスタイルコードを直接貼り付けてください。<br>
+          <small class="modal-tip">※詳細は <code>LAYOUT_SPECIFICATION.md</code>（仕様書）をご参照ください。</small>
+        </p>
+
+        <div class="modal-file-drop" id="modal-file-drop">
+          <input type="file" id="input-custom-file" accept=".css" class="file-input-hidden">
+          <label for="input-custom-file" class="file-drop-label">
+            <svg class="file-drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <span>CSSファイルを選択 または ここにドラッグ＆ドロップ</span>
+          </label>
+        </div>
+
+        <div class="modal-editor-wrap">
+          <label for="textarea-custom-css" class="editor-label">カスタムCSSコード直接入力:</label>
+          <textarea id="textarea-custom-css" class="custom-css-editor" placeholder="/* ここに独自のCSSを記述できます */&#10;.msg-card { border-radius: 4px; }&#10;.msg-user { border-left: 4px solid #2563eb; }"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btn-modal-clear" class="ebtn ebtn-danger">カスタムCSSを初期化</button>
+        <div class="modal-footer-right">
+          <button type="button" id="btn-modal-cancel" class="tbtn">キャンセル</button>
+          <button type="button" id="btn-modal-apply" class="tbtn tbtn-primary">適用する</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div id="loading" class="loading">
     <div class="spinner"></div>

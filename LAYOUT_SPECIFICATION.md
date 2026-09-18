@@ -135,71 +135,138 @@ PDF変換時の改ページ破綻や枠線の途切れを防ぐため、以下�
 
 ---
 
-## 4. サンプルプリセット定義
+## 4. プリセットテンプレート一覧
 
-本仕様に準拠した3つの代表的スタイル例です。
+エクステンションには以下の6種類の公式テンプレートが標準搭載されています。各テンプレートは `.document` または `#document` に付与されるクラス名で切り替わります。
 
-### ① 学術・レポート風 (Academic Theme)
+| テンプレート名 | クラス名 | 特徴・デザインコンセプト | 主な用途 |
+| :--- | :--- | :--- | :--- |
+| **標準 (Modern Chat)** | `theme-default` | 丸みのある吹き出しカード・アイコン付きのモダンなチャットUI | 一般的な会話保存、普段使い |
+| **技術・学術レポート** | `theme-academic` | 吹き出し背景や丸みを廃止し、左ボーダー、Serif/明朝系組版、1.8倍行送りで書籍・論文風の気品ある組版 | 論文、数式・コード解説、学術提出用 |
+| **公式ドキュメント** | `theme-document` | 「Q.」「A.」の明瞭な構造化見出し、クリーンなグリッド、仕様書スタイルのセクション分離 | マニュアル、要件定義書、議事録 |
+| **ノート** | `theme-note` | 余白やカードパディングを詰め、一覧性と印刷時の用紙枚数削減を最重視したコンパクト設計 | 印刷用紙の節約、要点メモ、復習用 |
+| **ブログ** | `theme-blog` | Webマガジンやテックブログ風の洗練された1カラム組版、適度な行間、アイキャッチ感のあるアバターと見出し | 記事下書き、ノウハウ共有、公開用HTML |
+| **対話形式の解説風** | `theme-dialogue` | 質問者（ユーザー）と解説役（AIチューター/メンター）の掛け合いを強調した吹き出しレイアウト。AI側に丁寧な解説ハイライト枠を適用 | 教材、Q&A形式の解説コンテンツ、FAQ |
+
+---
+
+## 5. プリセットテンプレートのスタイル定義例
+
+### ① 技術・学術レポート (`.theme-academic`)
 ```css
-/* 吹き出しを廃止し、左ボーダーと明朝/セリフフォントで書籍・論文風に */
-#chat-container {
-  max-width: 800px;
+.theme-academic {
   font-family: "Times New Roman", "Yu Mincho", "Hiragino Mincho ProN", serif;
   line-height: 1.8;
+  color: #111827;
 }
-.msg-card {
+.theme-academic .msg {
   border: none !important;
   background: transparent !important;
-  padding: 16px 0 !important;
-  margin-bottom: 24px !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 18px 0 18px 20px !important;
   border-bottom: 1px solid #e5e7eb !important;
 }
-.msg-user {
-  border-left: 3px solid #3b82f6 !important;
-  padding-left: 16px !important;
+.theme-academic .msg-user {
+  border-left: 3px solid #2563eb !important;
 }
-.msg-assistant {
-  border-left: 3px solid #10b981 !important;
-  padding-left: 16px !important;
+.theme-academic .msg-assistant {
+  border-left: 3px solid #059669 !important;
 }
 ```
 
-### ② 公式仕様書・ドキュメント風 (Document Theme)
+### ② 公式ドキュメント (`.theme-document`)
 ```css
-/* Q&Aセクション形式 */
-.msg-user .msg-header::before {
+.theme-document .msg {
+  border: 1px solid #d1d5db !important;
+  border-radius: 6px !important;
+  background: #ffffff !important;
+  margin-bottom: 16px !important;
+}
+.theme-document .msg-user .msg-role::before {
   content: "Q. ";
-  font-weight: bold;
+  font-weight: 800;
   color: #2563eb;
-  font-size: 1.2em;
 }
-.msg-assistant .msg-header::before {
+.theme-document .msg-assistant .msg-role::before {
   content: "A. ";
-  font-weight: bold;
+  font-weight: 800;
   color: #059669;
-  font-size: 1.2em;
 }
 ```
 
-### ③ コンパクト・メモ風 (Compact Theme)
+### ③ ノート (`.theme-note`)
 ```css
-/* 余白を削り、用紙枚数を節約 */
-.msg-card {
-  padding: 6px 10px !important;
-  margin-bottom: 6px !important;
+.theme-note .msg {
+  padding: 8px 12px !important;
+  margin-bottom: 8px !important;
   border-radius: 4px !important;
   font-size: 13px !important;
+  background: #fdfdfd !important;
+  border: 1px solid #e5e7eb !important;
 }
-.msg-avatar { display: none; }
+```
+
+### ④ ブログ (`.theme-blog`)
+```css
+.theme-blog {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  line-height: 1.75;
+}
+.theme-blog .msg {
+  border: none !important;
+  background: transparent !important;
+  padding: 24px 0 !important;
+  border-bottom: 1px dashed #d1d5db !important;
+}
+.theme-blog .msg-role {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+}
+```
+
+### ⑤ 対話形式の解説風 (`.theme-dialogue`)
+```css
+/* 左側: AI（解説役） */
+.theme-dialogue .msg-assistant {
+  max-width: 92%;
+  margin-right: auto;
+  margin-left: 0;
+  background: #ffffff !important;
+  border: 2px solid #10b981 !important;
+  border-radius: 16px 16px 16px 4px !important;
+  box-shadow: 0 4px 12px rgba(16,185,129,0.08) !important;
+}
+.theme-dialogue .msg-assistant .msg-role::after {
+  content: " [解説]";
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #059669;
+}
+/* 右側: あなた / ユーザー（質問役） */
+.theme-dialogue .msg-user {
+  max-width: 84%;
+  margin-left: auto;
+  margin-right: 0;
+  background: #eff6ff !important;
+  border: 1.5px solid #bfdbfe !important;
+  border-radius: 16px 16px 4px 16px !important;
+}
+.theme-dialogue .msg-user .msg-role::after {
+  content: " [質問]";
+  font-size: 0.85em;
+  font-weight: 500;
+  color: #2563eb;
+}
 ```
 
 ---
 
-## 5. ファイルの取り込みと検証仕様
+## 6. 外部レイアウトの取り込みと検証仕様
 
 1. **インポート手順**:
-   - ツールバーの「レイアウト」ボタンから「外部レイアウトの読み込み」を選択。
-   - 作成した `.css` または `.html` ファイルをドラッグ＆ドロップ、またはコードを直接ペースト。
+   - ツールバーの「レイアウト」から「外部レイアウトの読み込み」を選択。
+   - 作成した `.css` または `.html` ファイルをファイル選択（またはコード直接貼り付け）。
 2. **安全性の保証**:
-   - スクリプトタグ（`<script>`）やインラインイベントハンドラ（`onload`, `onclick` 等）は自動的にサニタイズされ、スタイルと構造のみが抽出されます。
-   - インポートしたレイアウトはローカルストレージに保持され、HTMLファイル書き出し時にも埋め込まれます。
+   - スクリプトタグ（`<script>`）やインラインイベントハンドラ（`onload`, `onclick` 等）は自動的に除去（サニタイズ）され、スタイルと構造のみが適用されます。
+   - 読み込まれた外部CSSは `<style id="custom-layout-style">` に即時反映され、HTMLエクスポート時にも自動で埋め込まれます。

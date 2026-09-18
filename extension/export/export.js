@@ -19,10 +19,36 @@
   const tbCountEl = document.getElementById('tb-count');
   const tbHintEl = document.getElementById('toolbar-hint');
   const selectMathEngine = document.getElementById('select-math-engine');
+  const selectLayoutTheme = document.getElementById('select-layout-theme');
   const btnPrint = document.getElementById('btn-print');
   const btnDlHtml = document.getElementById('btn-dl-html');
   const btnDlText = document.getElementById('btn-dl-text');
   const btnClose = document.getElementById('btn-close');
+
+  // カスタムレイアウト用DOM要素
+  const customModalEl = document.getElementById('custom-layout-modal');
+  const modalBackdropEl = document.getElementById('modal-backdrop');
+  const modalCloseBtn = document.getElementById('modal-close');
+  const modalFileDropEl = document.getElementById('modal-file-drop');
+  const inputCustomFile = document.getElementById('input-custom-file');
+  const textareaCustomCss = document.getElementById('textarea-custom-css');
+  const btnModalApply = document.getElementById('btn-modal-apply');
+  const btnModalCancel = document.getElementById('btn-modal-cancel');
+  const btnModalClear = document.getElementById('btn-modal-clear');
+
+  // レイアウト設定の初期値
+  let currentLayoutTheme = 'theme-default';
+  let customCssContent = '';
+  try {
+    const savedTheme = localStorage.getItem('preferred_layout_theme');
+    if (savedTheme) {
+      currentLayoutTheme = savedTheme;
+    }
+    const savedCss = localStorage.getItem('custom_layout_css');
+    if (savedCss) {
+      customCssContent = savedCss;
+    }
+  } catch (_) {}
 
   // 数式エンジンの初期設定 (標準: KaTeX)
   let currentMathEngine = 'katex';
@@ -825,6 +851,86 @@
   }
 
   // ---------------------------------------------------------------
+  // レイアウトテンプレート & カスタムCSS適用ロジック
+  // ---------------------------------------------------------------
+  const ALL_LAYOUT_THEMES = [
+    'theme-default',
+    'theme-academic',
+    'theme-document',
+    'theme-note',
+    'theme-blog',
+    'theme-dialogue',
+    'theme-custom'
+  ];
+
+  /** レイアウトテンプレートをDOMに適用 */
+  function applyLayoutTheme(theme) {
+    const docEl = document.getElementById('document');
+    if (!docEl) return;
+
+    // 既存のテーマクラスを除去
+    ALL_LAYOUT_THEMES.forEach((t) => docEl.classList.remove(t));
+
+    currentLayoutTheme = theme;
+    docEl.classList.add(theme);
+
+    // カスタムCSSタグの管理
+    let styleEl = document.getElementById('custom-layout-style');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'custom-layout-style';
+      document.head.appendChild(styleEl);
+    }
+
+    if (customCssContent && (theme === 'theme-custom' || customCssContent.trim())) {
+      styleEl.textContent = customCssContent;
+    } else {
+      styleEl.textContent = '';
+    }
+
+    try {
+      localStorage.setItem('preferred_layout_theme', theme);
+    } catch (_) {}
+
+    if (selectLayoutTheme && selectLayoutTheme.value !== theme) {
+      selectLayoutTheme.value = theme;
+    }
+  }
+
+  /** カスタムCSS読込モーダルを開く */
+  function openCustomModal() {
+    if (!customModalEl) return;
+    if (textareaCustomCss) {
+      textareaCustomCss.value = customCssContent || '';
+    }
+    customModalEl.style.display = 'flex';
+  }
+
+  /** カスタムCSS読込モーダルを閉じる */
+  function closeCustomModal() {
+    if (!customModalEl) return;
+    customModalEl.style.display = 'none';
+    if (selectLayoutTheme) {
+      selectLayoutTheme.value = currentLayoutTheme;
+    }
+  }
+
+  /** ファイル（.css）の読み込み処理 */
+  function handleCustomFileLoad(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      if (typeof text === 'string') {
+        if (textareaCustomCss) {
+          textareaCustomCss.value = text;
+        }
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ---------------------------------------------------------------
   // 会話データの選択・削除・復元ロジック
   // ---------------------------------------------------------------
   function getActiveMessages() {
@@ -1122,6 +1228,7 @@
     docClone.querySelectorAll('.msg.is-selected').forEach((n) => n.classList.remove('is-selected'));
 
     const docHtml = docClone.innerHTML;
+    const currentThemeClass = currentLayoutTheme || 'theme-default';
 
     const mathHeadTag = currentMathEngine === 'mathjax'
       ? '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>'
@@ -1138,12 +1245,14 @@
       mathHeadTag,
       '<style>',
       cssText,
+      '/* カスタムレイアウトCSS */',
+      (customCssContent || ''),
       '/* 単一ファイル化に伴う調整: 画面用の余白のみ */',
       'body{padding:16px;}',
       '</style>',
       '</head>',
       '<body>',
-      '<main class="document">',
+      `<main class="document ${currentThemeClass}">`,
       docHtml,
       '</main>',
       '</body>',
@@ -1563,6 +1672,77 @@
       switchMathEngine(e.target.value);
     });
   }
+
+  // レイアウト選択リスナー
+  if (selectLayoutTheme) {
+    selectLayoutTheme.value = currentLayoutTheme;
+    selectLayoutTheme.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (val === 'theme-custom') {
+        openCustomModal();
+      } else {
+        applyLayoutTheme(val);
+      }
+    });
+  }
+
+  // カスタムレイアウトモーダルのイベントリスナー
+  if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeCustomModal);
+  if (modalBackdropEl) modalBackdropEl.addEventListener('click', closeCustomModal);
+  if (btnModalCancel) btnModalCancel.addEventListener('click', closeCustomModal);
+
+  if (btnModalApply) {
+    btnModalApply.addEventListener('click', () => {
+      if (textareaCustomCss) {
+        customCssContent = textareaCustomCss.value || '';
+        try {
+          localStorage.setItem('custom_layout_css', customCssContent);
+        } catch (_) {}
+      }
+      applyLayoutTheme('theme-custom');
+      if (customModalEl) customModalEl.style.display = 'none';
+    });
+  }
+
+  if (btnModalClear) {
+    btnModalClear.addEventListener('click', () => {
+      if (confirm('保存されたカスタムCSSをリセットしますか？')) {
+        customCssContent = '';
+        if (textareaCustomCss) textareaCustomCss.value = '';
+        try {
+          localStorage.removeItem('custom_layout_css');
+        } catch (_) {}
+        applyLayoutTheme('theme-default');
+        if (customModalEl) customModalEl.style.display = 'none';
+      }
+    });
+  }
+
+  if (inputCustomFile) {
+    inputCustomFile.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) handleCustomFileLoad(file);
+    });
+  }
+
+  if (modalFileDropEl) {
+    modalFileDropEl.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      modalFileDropEl.classList.add('dragover');
+    });
+    modalFileDropEl.addEventListener('dragleave', () => {
+      modalFileDropEl.classList.remove('dragover');
+    });
+    modalFileDropEl.addEventListener('drop', (e) => {
+      e.preventDefault();
+      modalFileDropEl.classList.remove('dragover');
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) handleCustomFileLoad(file);
+    });
+  }
+
+  // 初期化時に保存済みレイアウトを適用
+  applyLayoutTheme(currentLayoutTheme);
 
   // 会話編集・選択ボタンのイベントリスナー
   chkSelectAll.addEventListener('change', (e) => toggleSelectAll(e.target.checked));
