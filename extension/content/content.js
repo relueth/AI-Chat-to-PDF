@@ -897,12 +897,27 @@
   function preserveAllMathData(root) {
     if (!root) return;
 
-    // 1. MathML annotation (生TeX) または direct attributes
+    // 1. 最上位の数式コンテナのみを抽出 (入れ子の math や annotation 等の子要素への重複タグ付けを防止)
     const mathElements = root.querySelectorAll(
-      '.katex-display, [class*="katex-display"], .katex, [class*="katex"], .math-display, .math-inline, [class*="math-display"], [class*="math-inline"], [class*="language-math"], [class*="language-latex"], math, mjx-container, [data-tex], [data-latex], [data-math]'
+      '.katex-display, [class*="katex-display"], .katex, [class*="katex"], .math-display, .math-inline, [class*="math-display"], [class*="math-inline"], [class*="language-math"], [class*="language-latex"], mjx-container, math, [data-tex], [data-latex], [data-math]'
     );
 
+    const outermost = [];
     for (const el of mathElements) {
+      if (el.closest('.katex-mathml')) continue;
+      let isDescendant = false;
+      for (const parent of outermost) {
+        if (parent.contains(el) && parent !== el) {
+          isDescendant = true;
+          break;
+        }
+      }
+      if (!isDescendant) {
+        outermost.push(el);
+      }
+    }
+
+    for (const el of outermost) {
       if (el.getAttribute('data-tex')) continue;
 
       let raw = '';
@@ -923,7 +938,7 @@
 
       // C. MathML alttext
       if (!raw) {
-        const mathEl = el.querySelector('math') || (el.tagName.toLowerCase() === 'math' ? el : null);
+        const mathEl = el.querySelector('math') || (el.tagName && el.tagName.toLowerCase() === 'math' ? el : null);
         if (mathEl) {
           const mAlt = mathEl.getAttribute('alttext');
           if (mAlt && mAlt.trim()) raw = mAlt.trim();
@@ -939,11 +954,6 @@
 
       if (raw) {
         el.setAttribute('data-tex', raw);
-        // 子の .katex や 親の display コンテナにも一貫して付与
-        const inner = el.querySelector('.katex');
-        if (inner && !inner.getAttribute('data-tex')) inner.setAttribute('data-tex', raw);
-        const parentDisplay = el.closest('.katex-display, [class*="katex-display"]');
-        if (parentDisplay && !parentDisplay.getAttribute('data-tex')) parentDisplay.setAttribute('data-tex', raw);
       }
     }
   }
@@ -956,6 +966,9 @@
     const clone = root.cloneNode(true);
     normalizeImages(clone);
     preserveAllMathData(clone);
+
+    // 生TeX退避後に .katex-mathml および annotation を除去 (重複描画・二重文字の完全防止)
+    clone.querySelectorAll('.katex-mathml, annotation').forEach((n) => n.remove());
 
     // Gemini Notebook / NotebookLM の引用・出典番号バッジ(ボタン形式)を保持してsup要素に変換
     clone.querySelectorAll('button[class*="citation"], [class*="citation-chip"], [class*="citation-pill"], [class*="citation-marker"], [class*="source-citation"], [data-source-id], [data-source-index], sup button').forEach((btn) => {

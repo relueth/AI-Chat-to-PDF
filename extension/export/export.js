@@ -150,8 +150,8 @@
    */
   function preserveMathDataInContainer(root) {
     if (!root) return;
-    // 1. KaTeX 要素の annotation (生TeX) または data-tex を退避
-    root.querySelectorAll('.katex, .katex-display').forEach((k) => {
+    // 1. KaTeX 要素の annotation (生TeX) または data-tex を退避 (最上位コンテナのみに付与)
+    root.querySelectorAll('.katex-display, .katex').forEach((k) => {
       if (k.getAttribute('data-tex')) return;
       const ann = k.querySelector('annotation[encoding="application/x-tex"], annotation');
       let raw = ann && ann.textContent.trim() ? ann.textContent.trim() : '';
@@ -164,11 +164,6 @@
       }
       if (raw) {
         k.setAttribute('data-tex', raw);
-        // 子の .katex や 親の .katex-display にも両方付与
-        const inner = k.querySelector('.katex');
-        if (inner && !inner.getAttribute('data-tex')) inner.setAttribute('data-tex', raw);
-        const parentDisplay = k.closest('.katex-display');
-        if (parentDisplay && !parentDisplay.getAttribute('data-tex')) parentDisplay.setAttribute('data-tex', raw);
       }
     });
 
@@ -186,13 +181,17 @@
       }
     });
 
-    // 3. その他 data-math, data-latex
+    // 3. その他 data-math, data-latex (最外層のみ)
     root.querySelectorAll('[data-math], [data-latex], [data-tex-source], [class*="math-tex"]').forEach((el) => {
+      if (el.closest('.katex, .katex-display, mjx-container')) return;
       const tex = el.getAttribute('data-math') || el.getAttribute('data-latex') || el.getAttribute('data-tex-source');
       if (tex && !el.getAttribute('data-tex')) {
         el.setAttribute('data-tex', tex.trim());
       }
     });
+
+    // 生TeX退避後に .katex-mathml や annotation を除去 (Chrome native MathMLとの二重描画・重複を完全排除)
+    root.querySelectorAll('.katex-mathml, annotation').forEach((n) => n.remove());
   }
 
   /**
@@ -690,7 +689,15 @@
         '.math, [class*="math-inline"], [class*="math-display"], [class*="language-math"], [class*="language-latex"], [data-tex]'
       );
       for (const el of candidates) {
-        if (el.querySelector('.katex') || el.classList.contains('katex') || el.classList.contains('katex-display')) continue;
+        // すでにKaTeXであるか、KaTeXの内部にある要素、または内部にKaTeXを含む要素はスキップ (二重描画・文字重複の完全防止)
+        if (
+          el.closest('.katex, .katex-display') ||
+          el.classList.contains('katex') ||
+          el.classList.contains('katex-display') ||
+          el.querySelector('.katex, .katex-display, .katex-html')
+        ) {
+          continue;
+        }
         const rawTex = getTexFromMathElement(el);
         if (!rawTex) continue;
         const isDisplay = el.classList.contains('math-display') ||
@@ -711,6 +718,9 @@
         } catch (_) { /* noop */ }
       }
     }
+
+    // レンダリング後に残存した .katex-mathml や annotation を全除去 (Chrome native MathML重複の完全排除)
+    container.querySelectorAll('.katex-mathml, annotation').forEach((km) => km.remove());
   }
 
   /** MathJax によるレンダリング (ディスプレイ数式・インライン数式を完全にMathJaxへ変換) */
@@ -1231,7 +1241,7 @@
     const currentThemeClass = currentLayoutTheme || 'theme-default';
 
     const mathHeadTag = currentMathEngine === 'mathjax'
-      ? '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>'
+      ? '<script>window.MathJax={tex:{inlineMath:[["$","$"],["\\\\(","\\\\)"]],displayMath:[["$$","$$"],["\\\\[","\\\\]"]]},svg:{fontCache:"local",blacker:0,scale:0.95}};</script><script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>'
       : '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">';
 
     return [
