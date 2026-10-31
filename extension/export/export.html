@@ -14,41 +14,126 @@
 <body>
   <!-- 印刷時は非表示になるツールバー -->
   <header id="toolbar" class="toolbar">
-    <div class="toolbar-inner">
-      <div class="toolbar-info">
-        <strong id="tb-site">-</strong>
-        <span id="tb-title" class="tb-title"></span>
-        <span id="tb-count" class="tb-count"></span>
+    <div class="toolbar-container">
+      <div class="toolbar-top-row">
+        <div class="toolbar-info">
+          <div class="toolbar-brand">
+            <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span class="brand-name">AI Chat to PDF</span>
+          </div>
+          <span id="tb-site" class="tb-site-badge">-</span>
+          <span id="tb-title" class="tb-title"></span>
+          <span id="tb-count" class="tb-count"></span>
+        </div>
+        <div class="toolbar-actions">
+          <button id="btn-print" class="tbtn tbtn-primary" title="PDFとして保存します（印刷ダイアログが開きます）">
+            <svg class="tbtn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 9V2h12v7"></path>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+            <span>PDFとして保存 (印刷)</span>
+          </button>
+          <button id="btn-copy-html" class="tbtn tbtn-accent" title="ブログ記事やWebページに直接貼り付けられるHTMLコードをコピーします">
+            <svg class="tbtn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span>HTMLをコピー</span>
+          </button>
+          <button id="btn-dl-html" class="tbtn" title="単体で開けるHTMLファイルを保存します">
+            <svg class="tbtn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>HTML保存</span>
+          </button>
+          <button id="btn-dl-text" class="tbtn" title="Markdown風テキスト形式で保存します">
+            <svg class="tbtn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+            <span>テキスト保存</span>
+          </button>
+          <button id="btn-close" class="tbtn tbtn-muted" title="タブを閉じます">
+            <svg class="tbtn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+            <span>閉じる</span>
+          </button>
+        </div>
       </div>
-      <div class="toolbar-actions">
-        <div class="engine-select-wrap" title="数式のレンダリングエンジンを切り替えます（標準: KaTeX / 高機能: MathJax）">
-          <label for="select-math-engine" class="engine-label">数式:</label>
-          <select id="select-math-engine" class="engine-select">
-            <option value="katex" selected>KaTeX (標準)</option>
-            <option value="mathjax">MathJax</option>
-          </select>
+
+      <!-- 設定ツールバー (2段目: 洗練された設定コントロールバー) -->
+      <div class="toolbar-settings-bar">
+        <div class="settings-group">
+          <!-- AI表示名設定 -->
+          <div class="setting-item" title="AI返答のヘッダーに表示する名前を選択・変更します">
+            <label for="select-ai-name-type" class="setting-label">AI表示名:</label>
+            <select id="select-ai-name-type" class="setting-select">
+              <option value="site" id="opt-ai-site">AIの名前 (Gemini等)</option>
+              <option value="assistant">Assistant</option>
+              <option value="ai">AI</option>
+              <option value="custom">自分で入力...</option>
+            </select>
+            <input type="text" id="input-custom-ai-name" class="custom-ai-input" placeholder="名前を入力" style="display:none;" maxlength="24" autocomplete="off" title="表示させたいAIの名前を入力">
+          </div>
+
+          <div class="setting-separator"></div>
+
+          <!-- 公開設定 -->
+          <div class="setting-item" title="ブログやWebサイト公開用に上部URLや下部フッターの表示/非表示を切り替えます">
+            <label for="select-publish-mode" class="setting-label">公開設定:</label>
+            <select id="select-publish-mode" class="setting-select">
+              <option value="clean-blog" selected>ブログ公開用 (URL・フッター非表示)</option>
+              <option value="standard">標準 (URL・フッター表示)</option>
+              <option value="messages-only">会話のみ (ヘッダー・フッター非表示)</option>
+            </select>
+          </div>
+
+          <div class="setting-separator"></div>
+
+          <!-- レイアウト設定 -->
+          <div class="setting-item" title="PDF・HTML出力時のデザインテンプレートを変更します">
+            <label for="select-layout-theme" class="setting-label">レイアウト:</label>
+            <select id="select-layout-theme" class="setting-select">
+              <option value="theme-default" selected>標準</option>
+              <option value="theme-note">ノート</option>
+              <option value="theme-academic">技術・学術レポート</option>
+              <option value="theme-document">公式ドキュメント</option>
+              <option value="theme-blog">ブログ</option>
+              <option value="theme-dialogue">対話形式の解説風</option>
+              <option value="theme-custom">カスタム (外部読込)...</option>
+            </select>
+          </div>
+
+          <div class="setting-separator"></div>
+
+          <!-- 数式エンジン設定 -->
+          <div class="setting-item" title="数式のレンダリングエンジンを切り替えます（標準: KaTeX / 高機能: MathJax）">
+            <label for="select-math-engine" class="setting-label">数式:</label>
+            <select id="select-math-engine" class="setting-select">
+              <option value="katex" selected>KaTeX (標準)</option>
+              <option value="mathjax">MathJax</option>
+            </select>
+          </div>
         </div>
-        <div class="engine-select-wrap" title="PDF・HTML出力時のデザインテンプレートを変更します">
-          <label for="select-layout-theme" class="engine-label">レイアウト:</label>
-          <select id="select-layout-theme" class="engine-select">
-            <option value="theme-default" selected>標準</option>
-            <option value="theme-academic">技術・学術レポート</option>
-            <option value="theme-document">公式ドキュメント</option>
-            <option value="theme-note">ノート</option>
-            <option value="theme-blog">ブログ</option>
-            <option value="theme-dialogue">対話形式の解説風</option>
-            <option value="theme-custom">カスタム (外部読込)...</option>
-          </select>
+
+        <div class="toolbar-hint-inline" id="toolbar-hint">
+          💡 PDF保存は印刷画面で「送信先 → PDFに保存」を選択。「HTMLをコピー」でブログに貼付可能
         </div>
-        <button id="btn-print" class="tbtn tbtn-primary">PDFとして保存 (印刷)</button>
-        <button id="btn-dl-html" class="tbtn">HTMLを保存</button>
-        <button id="btn-dl-text" class="tbtn">テキストを保存</button>
-        <button id="btn-close" class="tbtn">タブを閉じる</button>
       </div>
     </div>
-    <p class="toolbar-hint" id="toolbar-hint">
-      印刷ダイアログで「送信先 → PDFに保存」を選んでください。背景グラフィックは不要、余白は「デフォルト」推奨です。
-    </p>
   </header>
 
   <!-- PDF化される本文 -->
@@ -78,6 +163,11 @@
           </svg>
           元に戻す (<span id="deleted-count">0</span>件削除中)
         </button>
+        <div class="edit-bar-divider"></div>
+        <label class="publish-mode-chk-wrap" title="ブログやWebサイト公開用に、上部のURLと下部のフッターを非表示にします">
+          <input type="checkbox" id="chk-clean-blog" class="chk-custom" checked>
+          <span class="publish-mode-text">ブログ公開用 (URL・フッター非表示)</span>
+        </label>
       </div>
       <div class="edit-bar-right">
         <span class="edit-guide">※不要な会話を削除してからPDF・HTML・テキスト保存できます</span>
@@ -93,7 +183,7 @@
       <button id="btn-restore-all" class="ebtn ebtn-secondary">すべての会話を復元</button>
     </div>
 
-    <footer class="doc-footer">
+    <footer id="doc-footer" class="doc-footer">
       <span>Exported by AI Chat to PDF Extension</span>
     </footer>
   </main>
@@ -172,6 +262,8 @@
     };
   </script>
   <script src="../lib/mathjax/tex-svg.js" id="mathjax-script"></script>
+
+  <div id="toast" class="toast" style="display: none;"></div>
 
   <script src="export.js"></script>
 </body>

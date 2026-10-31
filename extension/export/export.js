@@ -20,8 +20,13 @@
   const tbHintEl = document.getElementById('toolbar-hint');
   const selectMathEngine = document.getElementById('select-math-engine');
   const selectLayoutTheme = document.getElementById('select-layout-theme');
+  const selectPublishMode = document.getElementById('select-publish-mode');
+  const selectAiNameType = document.getElementById('select-ai-name-type');
+  const inputCustomAiName = document.getElementById('input-custom-ai-name');
+  const optAiSite = document.getElementById('opt-ai-site');
   const btnPrint = document.getElementById('btn-print');
   const btnDlHtml = document.getElementById('btn-dl-html');
+  const btnCopyHtml = document.getElementById('btn-copy-html');
   const btnDlText = document.getElementById('btn-dl-text');
   const btnClose = document.getElementById('btn-close');
 
@@ -59,9 +64,60 @@
     }
   } catch (_) {}
 
+  // 公開用表示モードの初期設定 (初期値: clean-blog = ブログ公開用・URL/フッター非表示)
+  let currentPublishMode = 'clean-blog';
+  try {
+    const savedPublishMode = localStorage.getItem('preferred_publish_mode');
+    if (savedPublishMode === 'standard' || savedPublishMode === 'clean-blog' || savedPublishMode === 'messages-only') {
+      currentPublishMode = savedPublishMode;
+    }
+  } catch (_) {}
+
+  // AI表示名設定の初期値 ('site' | 'assistant' | 'ai' | 'custom')
+  let currentAiNameType = 'site';
+  let customAiName = '';
+  try {
+    const savedAiType = localStorage.getItem('preferred_ai_name_type');
+    if (savedAiType === 'site' || savedAiType === 'assistant' || savedAiType === 'ai' || savedAiType === 'custom') {
+      currentAiNameType = savedAiType;
+    }
+    const savedCustomName = localStorage.getItem('custom_ai_name');
+    if (savedCustomName) {
+      customAiName = savedCustomName;
+    }
+  } catch (_) {}
+
+  /** 発言ロールの表示名を取得 */
+  function getRoleDisplayName(role) {
+    if (role === 'user') {
+      return 'あなた';
+    }
+    if (currentAiNameType === 'assistant') {
+      return 'Assistant';
+    }
+    if (currentAiNameType === 'ai') {
+      return 'AI';
+    }
+    if (currentAiNameType === 'custom') {
+      return (customAiName && customAiName.trim()) ? customAiName.trim() : 'AI';
+    }
+    // 'site' (デフォルト: サービス名 Gemini, ChatGPT, Claude等)
+    return (currentPayload && (currentPayload.siteName || currentPayload.site)) || 'AI';
+  }
+
+  /** DOM内のすべてのAIアシスタント発言ヘッダーの表示名を一括更新 */
+  function updateAiRoleDisplayNames() {
+    const name = getRoleDisplayName('assistant');
+    const roles = messagesEl.querySelectorAll('.msg-assistant .msg-role');
+    roles.forEach((el) => {
+      el.textContent = name;
+    });
+  }
+
   // 会話削除・選択UI要素
   const editBarEl = document.getElementById('edit-bar');
   const chkSelectAll = document.getElementById('chk-select-all');
+  const chkCleanBlog = document.getElementById('chk-clean-blog');
   const btnDeleteSelected = document.getElementById('btn-delete-selected');
   const selectedCountEl = document.getElementById('selected-count');
   const btnUndo = document.getElementById('btn-undo');
@@ -70,11 +126,9 @@
   const emptyNoticeEl = document.getElementById('empty-notice');
   const btnRestoreAll = document.getElementById('btn-restore-all');
 
-  const ROLE_LABEL = { user: 'あなた', assistant: 'AI' };
-
   const FORMAT_HINTS = {
     pdf: '不要な会話を選択・削除して整理した後、「PDFとして保存」を押してください。印刷ダイアログで「送信先 → PDFに保存」を選びます。',
-    html: '不要な会話を選択・削除して整理した後、「HTMLを保存」を押してください。削除後の内容で単一HTMLファイルをダウンロードします。',
+    html: '「HTMLを保存」または「HTMLをコピー」でブログやサイトに貼り付け可能なコードを取得できます。「ブログ公開用」を選択するとURLや下部フッターが自動除外されます。',
     text: '不要な会話を選択・削除して整理した後、「テキストを保存」を押してください。削除後の内容でMarkdown風テキストを出力します。'
   };
 
@@ -941,6 +995,60 @@
   }
 
   // ---------------------------------------------------------------
+  // ブログ・公開用表示モード管理
+  // ---------------------------------------------------------------
+  const ALL_PUBLISH_MODES = [
+    'mode-standard',
+    'mode-clean-blog',
+    'mode-messages-only'
+  ];
+
+  /** 公開用モードを適用 ('standard' | 'clean-blog' | 'messages-only') */
+  function applyPublishMode(mode) {
+    if (!['standard', 'clean-blog', 'messages-only'].includes(mode)) {
+      mode = 'clean-blog';
+    }
+    currentPublishMode = mode;
+    const docEl = document.getElementById('document');
+    if (docEl) {
+      ALL_PUBLISH_MODES.forEach((m) => docEl.classList.remove(m));
+      docEl.classList.add(`mode-${mode}`);
+    }
+
+    try {
+      localStorage.setItem('preferred_publish_mode', mode);
+    } catch (_) {}
+
+    if (selectPublishMode && selectPublishMode.value !== mode) {
+      selectPublishMode.value = mode;
+    }
+    if (chkCleanBlog) {
+      chkCleanBlog.checked = (mode === 'clean-blog' || mode === 'messages-only');
+    }
+  }
+
+  /** トースト通知メッセージを表示 */
+  function showToast(message) {
+    let toast = document.getElementById('toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'toast';
+      toast.className = 'toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.display = 'flex';
+    requestAnimationFrame(() => {
+      toast.classList.add('show');
+    });
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => { toast.style.display = 'none'; }, 220);
+    }, 2800);
+  }
+
+  // ---------------------------------------------------------------
   // 会話データの選択・削除・復元ロジック
   // ---------------------------------------------------------------
   function getActiveMessages() {
@@ -952,23 +1060,31 @@
     if (!currentPayload) return;
     const { site, siteName, exportedAt, url } = currentPayload;
     docMetaEl.innerHTML = '';
-    docMetaEl.appendChild(document.createTextNode(`サービス: ${siteName || site || '-'}`));
+
+    const infoSpan = document.createElement('span');
+    infoSpan.className = 'doc-meta-info';
+    infoSpan.appendChild(document.createTextNode(`サービス: ${siteName || site || '-'}`));
     if (exportedAt) {
-      docMetaEl.appendChild(document.createTextNode('　|　エクスポート: ' + formatDate(exportedAt)));
+      infoSpan.appendChild(document.createTextNode('　|　エクスポート: ' + formatDate(exportedAt)));
     }
     if (deletedCount > 0) {
-      docMetaEl.appendChild(document.createTextNode(`　|　出力: ${activeCount}件 (${deletedCount}件除外)`));
+      infoSpan.appendChild(document.createTextNode(`　|　出力: ${activeCount}件 (${deletedCount}件除外)`));
     } else {
-      docMetaEl.appendChild(document.createTextNode(`　|　全${activeCount}件`));
+      infoSpan.appendChild(document.createTextNode(`　|　全${activeCount}件`));
     }
+    docMetaEl.appendChild(infoSpan);
+
     if (url) {
-      docMetaEl.appendChild(document.createElement('br'));
+      const urlSpan = document.createElement('span');
+      urlSpan.className = 'doc-meta-url';
+      urlSpan.appendChild(document.createElement('br'));
       const a = document.createElement('a');
       a.href = url;
       a.textContent = url;
       a.target = '_blank';
       a.rel = 'noopener';
-      docMetaEl.appendChild(a);
+      urlSpan.appendChild(a);
+      docMetaEl.appendChild(urlSpan);
     }
   }
 
@@ -1124,8 +1240,22 @@
     docTitleEl.textContent = displayTitle;
     document.title = displayTitle + ' - エクスポート';
 
-    tbSiteEl.textContent = siteName || site || '-';
+    const activeSiteName = siteName || site || '';
+    tbSiteEl.textContent = activeSiteName || '-';
     tbTitleEl.textContent = displayTitle;
+
+    if (optAiSite) {
+      optAiSite.textContent = activeSiteName ? `${activeSiteName} (サービス名)` : 'AIの名前 (サービス名)';
+    }
+
+    // AI表示名コントロールの状態同期
+    if (selectAiNameType) {
+      selectAiNameType.value = currentAiNameType;
+    }
+    if (inputCustomAiName) {
+      inputCustomAiName.value = customAiName;
+      inputCustomAiName.style.display = currentAiNameType === 'custom' ? 'inline-block' : 'none';
+    }
 
     messagesEl.innerHTML = '';
     const frag = document.createDocumentFragment();
@@ -1162,10 +1292,7 @@
 
       const role = document.createElement('span');
       role.className = 'msg-role';
-      role.textContent = ROLE_LABEL[m.role] || (siteName || 'AI');
-      if (m.role === 'assistant' && siteName) {
-        role.textContent = siteName;
-      }
+      role.textContent = getRoleDisplayName(m.role);
       headerLeft.appendChild(role);
 
       const headerRight = document.createElement('div');
@@ -1237,8 +1364,16 @@
     docClone.querySelectorAll('.msg.is-deleted').forEach((n) => n.remove());
     docClone.querySelectorAll('.msg.is-selected').forEach((n) => n.classList.remove('is-selected'));
 
+    // 公開用表示モードの適用: ブログ公開用なら上部URLと下部フッターを物理的に除去
+    if (currentPublishMode === 'clean-blog') {
+      docClone.querySelectorAll('.doc-meta-url, .doc-footer').forEach((n) => n.remove());
+    } else if (currentPublishMode === 'messages-only') {
+      docClone.querySelectorAll('.doc-header, .doc-footer').forEach((n) => n.remove());
+    }
+
     const docHtml = docClone.innerHTML;
     const currentThemeClass = currentLayoutTheme || 'theme-default';
+    const publishModeClass = `mode-${currentPublishMode}`;
 
     const mathHeadTag = currentMathEngine === 'mathjax'
       ? '<script>window.MathJax={tex:{inlineMath:[["$","$"],["\\\\(","\\\\)"]],displayMath:[["$$","$$"],["\\\\[","\\\\]"]]},svg:{fontCache:"local",blacker:0,scale:0.95}};</script><script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>'
@@ -1262,7 +1397,8 @@
       '</style>',
       '</head>',
       '<body>',
-      `<main class="document ${currentThemeClass}">`,
+      `<!-- AI Chat Conversation (Mode: ${currentPublishMode}) -->`,
+      `<main class="document ${currentThemeClass} ${publishModeClass}">`,
       docHtml,
       '</main>',
       '</body>',
@@ -1282,6 +1418,39 @@
     const name = sanitizeFilename(currentPayload.title) +
       '-' + formatDateForFilename(currentPayload.exportedAt) + '.html';
     downloadBlob(html, name, 'text/html;charset=utf-8');
+  }
+
+  /** ブログやWebサイトに直接貼り付けられるHTMLコードをクリップボードにコピー */
+  async function copyHtml() {
+    if (!currentPayload) return;
+    try {
+      const html = await buildStandaloneHtml(currentPayload);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(html);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = html;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      showToast('✓ ブログ貼り付け用HTMLをクリップボードにコピーしました！');
+      if (btnCopyHtml) {
+        const origText = btnCopyHtml.textContent;
+        btnCopyHtml.textContent = '✓ コピー完了!';
+        btnCopyHtml.classList.add('tbtn-success');
+        setTimeout(() => {
+          btnCopyHtml.textContent = origText;
+          btnCopyHtml.classList.remove('tbtn-success');
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('Failed to copy HTML:', err);
+      showToast('コピーに失敗しました。');
+    }
   }
 
   // ---------------------------------------------------------------
@@ -1458,7 +1627,7 @@
     } else {
       lines.push(`出力件数: ${active.length}件`);
     }
-    if (payload.url) {
+    if (payload.url && currentPublishMode !== 'clean-blog' && currentPublishMode !== 'messages-only') {
       lines.push('URL: ' + payload.url);
     }
     lines.push('');
@@ -1466,9 +1635,7 @@
     lines.push('');
 
     for (const m of active) {
-      const role = m.role === 'user'
-        ? 'あなた'
-        : (payload.siteName || 'AI');
+      const role = getRoleDisplayName(m.role);
       lines.push('## ' + role);
       lines.push('');
       lines.push(messageHtmlToText(m.html || ''));
@@ -1476,7 +1643,9 @@
       lines.push('---');
       lines.push('');
     }
-    lines.push('Exported by AI Chat to PDF Extension');
+    if (currentPublishMode !== 'clean-blog' && currentPublishMode !== 'messages-only') {
+      lines.push('Exported by AI Chat to PDF Extension');
+    }
     return lines.join('\n');
   }
 
@@ -1751,8 +1920,60 @@
     });
   }
 
-  // 初期化時に保存済みレイアウトを適用
+  // 初期化時に保存済みレイアウトおよび公開用表示モードを適用
   applyLayoutTheme(currentLayoutTheme);
+  applyPublishMode(currentPublishMode);
+
+  // 公開用表示モード切替リスナー
+  if (selectPublishMode) {
+    selectPublishMode.value = currentPublishMode;
+    selectPublishMode.addEventListener('change', (e) => {
+      applyPublishMode(e.target.value);
+    });
+  }
+
+  // AI表示名切替リスナー
+  if (selectAiNameType) {
+    selectAiNameType.value = currentAiNameType;
+    selectAiNameType.addEventListener('change', (e) => {
+      currentAiNameType = e.target.value;
+      try {
+        localStorage.setItem('preferred_ai_name_type', currentAiNameType);
+      } catch (_) {}
+
+      if (currentAiNameType === 'custom') {
+        if (inputCustomAiName) {
+          inputCustomAiName.style.display = 'inline-block';
+          inputCustomAiName.focus();
+        }
+      } else {
+        if (inputCustomAiName) {
+          inputCustomAiName.style.display = 'none';
+        }
+      }
+      updateAiRoleDisplayNames();
+    });
+  }
+
+  if (inputCustomAiName) {
+    inputCustomAiName.value = customAiName;
+    inputCustomAiName.addEventListener('input', (e) => {
+      customAiName = e.target.value;
+      try {
+        localStorage.setItem('custom_ai_name', customAiName);
+      } catch (_) {}
+      if (currentAiNameType === 'custom') {
+        updateAiRoleDisplayNames();
+      }
+    });
+  }
+
+  if (chkCleanBlog) {
+    chkCleanBlog.checked = (currentPublishMode === 'clean-blog' || currentPublishMode === 'messages-only');
+    chkCleanBlog.addEventListener('change', (e) => {
+      applyPublishMode(e.target.checked ? 'clean-blog' : 'standard');
+    });
+  }
 
   // 会話編集・選択ボタンのイベントリスナー
   chkSelectAll.addEventListener('change', (e) => toggleSelectAll(e.target.checked));
@@ -1769,6 +1990,9 @@
     window.print();
   });
   btnDlHtml.addEventListener('click', () => downloadHtml());
+  if (btnCopyHtml) {
+    btnCopyHtml.addEventListener('click', () => copyHtml());
+  }
   btnDlText.addEventListener('click', () => downloadText());
   btnClose.addEventListener('click', () => window.close());
 
