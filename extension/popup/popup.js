@@ -13,7 +13,8 @@
     claude:            { name: 'Claude',          className: 'claude' },
     genspark:          { name: 'Genspark',        className: 'genspark' },
     chatgpt:           { name: 'ChatGPT',         className: 'chatgpt' },
-    grok:              { name: 'Grok',            className: 'grok' }
+    grok:              { name: 'Grok',            className: 'grok' },
+    sakana:            { name: 'Sakana AI',       className: 'sakana' }
   };
 
   const btn = document.getElementById('btn-export');
@@ -68,6 +69,11 @@
       if (h === 'grok.com' || h.endsWith('.grok.com')) return true;
       if ((h === 'x.com' || h.endsWith('.x.com') || h === 'twitter.com' || h.endsWith('.twitter.com')) &&
           (p.startsWith('/i/grok') || p.startsWith('/grok'))) return true;
+      if (h === 'chat.sakana.ai' || h.endsWith('.chat.sakana.ai') ||
+          h === 'sakana.ai' || h.endsWith('.sakana.ai') ||
+          h === 'console.sakana.ai' || h.endsWith('.console.sakana.ai') ||
+          h === 'app.sakana.ai' || h.endsWith('.app.sakana.ai') ||
+          h === 'labs.sakana.ai' || h.endsWith('.labs.sakana.ai')) return true;
       return (
         h === 'kimi.moonshot.cn' || h.endsWith('.kimi.moonshot.cn') ||
         h === 'kimi.com' || h.endsWith('.kimi.com') ||
@@ -96,6 +102,7 @@
           ((h.includes('x.com') || h.includes('twitter.com')) && (p.startsWith('/i/grok') || p.startsWith('/grok')))) {
         return 'grok';
       }
+      if (h.includes('sakana')) return 'sakana';
       if (h.includes('kimi')) return 'kimi';
       if (h.includes('notebook.google.com') || h.includes('notebooklm.google') || h.includes('notebook.cloud.google.com') ||
           (h.includes('gemini.google.com') && (p.startsWith('/notebook') || p.startsWith('/notebooks')))) {
@@ -121,7 +128,7 @@
     if (!tab || !isSupportedUrl(tab.url || '')) {
       badge.textContent = '非対応ページ';
       badge.classList.add('unsupported');
-      setStatus('Kimi / Gemini / Gemini Notebook / Claude / Genspark / ChatGPT / Grok の会話ページで開いてください。');
+      setStatus('Kimi / Gemini / NotebookLM / Claude / Genspark / ChatGPT / Grok / Sakana AI の会話ページで開いてください。');
       btn.disabled = true;
       return;
     }

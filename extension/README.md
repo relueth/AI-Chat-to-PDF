@@ -1,4 +1,4 @@
-# AI Chat to PDF (Kimi / Gemini / Gemini Notebook / Claude / Genspark / ChatGPT / Grok)
+# AI Chat to PDF (Kimi / Gemini / Gemini Notebook / Claude / Genspark / ChatGPT / Grok / Sakana AI)
 
 AIの会話を **数式のレイアウトを崩さずに** **PDF / HTML / テキスト** のいずれかに変換するChrome拡張機能（Manifest V3）です。
 
@@ -19,6 +19,7 @@ AIの会話を **数式のレイアウトを崩さずに** **PDF / HTML / テキ
 5. **Genspark** (`genspark.ai`)
 6. **ChatGPT** (`chatgpt.com`, `chat.openai.com`)
 7. **Grok** (`grok.com`, `x.com/i/grok`)
+8. **Sakana AI / Sakana Chat** (`chat.sakana.ai`, `sakana.ai`, `console.sakana.ai`)
 
 ## 特徴
 
@@ -44,7 +45,7 @@ AIの会話を **数式のレイアウトを崩さずに** **PDF / HTML / テキ
 
 ### 変換の手順
 
-1. Kimi / Gemini / Claude / Genspark / ChatGPT / Grok の会話ページを開く
+1. Kimi / Gemini / Claude / Genspark / ChatGPT / Grok / Sakana AI の会話ページを開く
 2. ツールバーの拡張機能アイコンをクリック
 3. **変換形式（PDF / HTML / テキスト）** をラジオボタンで選択
 4. ボタンを押すと全会話を自動抽出（スクロール遡り）し、エクスポートページが新しいタブで開きます

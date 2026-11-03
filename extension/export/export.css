@@ -824,12 +824,24 @@ annotation,
    数式 (MathJax) - MathJax選択時の組版・印刷スタイル
    ============================================================ */
 mjx-container {
-  display: inline-block;
+  display: inline;
   outline: none;
   margin: 0 !important;
-  vertical-align: -0.22em;
   font-weight: normal !important;
 }
+
+/* インライン数式 (MathJax): 日本語などの本文文字とベースライン・視覚高さを自然に一致させる */
+mjx-container:not([display="true"]),
+.msg-body mjx-container:not([display="true"]),
+.math-holder.math-inline mjx-container {
+  display: inline !important;
+  vertical-align: baseline !important;
+  position: relative;
+  top: -0.05em; /* 日本語フォント(全角漢字・かな)の光学的中心・ベースラインとの完璧な高さ整合 */
+  margin: 0 0.14em !important;
+  line-height: normal;
+}
+
 /* MathJaxのテキストモード・演算子も確実にローマン体（立体）にする */
 mjx-container text,
 mjx-container .mjx-utext,
@@ -838,6 +850,8 @@ mjx-container [data-c] text {
   font-style: normal !important;
   font-weight: normal !important;
 }
+
+/* ディスプレイ(独立行)数式 */
 mjx-container[display="true"] {
   display: block !important;
   text-align: center;
@@ -847,9 +861,9 @@ mjx-container[display="true"] {
   break-inside: auto;
   page-break-inside: auto;
 }
+
 mjx-container[jax="SVG"] > svg {
   display: inline;
-  vertical-align: 0;
   max-width: 100%;
   shape-rendering: geometricPrecision;
   text-rendering: geometricPrecision;
@@ -1393,6 +1407,12 @@ mjx-container[jax="SVG"] svg use {
     font-weight: normal !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+  mjx-container:not([display="true"]) {
+    display: inline !important;
+    vertical-align: baseline !important;
+    position: relative;
+    top: -0.05em;
   }
   mjx-container[jax="SVG"] > svg {
     shape-rendering: geometricPrecision !important;
