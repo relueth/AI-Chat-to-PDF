@@ -14,7 +14,9 @@
     genspark:          { name: 'Genspark',        className: 'genspark' },
     chatgpt:           { name: 'ChatGPT',         className: 'chatgpt' },
     grok:              { name: 'Grok',            className: 'grok' },
-    sakana:            { name: 'Sakana AI',       className: 'sakana' }
+    sakana:            { name: 'Sakana AI',       className: 'sakana' },
+    deepseek:          { name: 'DeepSeek',        className: 'deepseek' },
+    'meta-ai':         { name: 'Meta AI',         className: 'meta-ai' }
   };
 
   const btn = document.getElementById('btn-export');
@@ -66,6 +68,8 @@
       const u = new URL(url);
       const h = u.hostname;
       const p = u.pathname;
+      if (h === 'chat.deepseek.com' || h.endsWith('.deepseek.com') || h === 'deepseek.com') return true;
+      if (h === 'meta.ai' || h.endsWith('.meta.ai') || h === 'www.meta.ai') return true;
       if (h === 'grok.com' || h.endsWith('.grok.com')) return true;
       if ((h === 'x.com' || h.endsWith('.x.com') || h === 'twitter.com' || h.endsWith('.twitter.com')) &&
           (p.startsWith('/i/grok') || p.startsWith('/grok'))) return true;
@@ -98,6 +102,8 @@
       const u = new URL(url);
       const h = u.hostname;
       const p = u.pathname;
+      if (h.includes('deepseek')) return 'deepseek';
+      if (h.includes('meta.ai')) return 'meta-ai';
       if (h.includes('grok.com') ||
           ((h.includes('x.com') || h.includes('twitter.com')) && (p.startsWith('/i/grok') || p.startsWith('/grok')))) {
         return 'grok';
@@ -128,7 +134,7 @@
     if (!tab || !isSupportedUrl(tab.url || '')) {
       badge.textContent = '非対応ページ';
       badge.classList.add('unsupported');
-      setStatus('Kimi / Gemini / NotebookLM / Claude / Genspark / ChatGPT / Grok / Sakana AI の会話ページで開いてください。');
+      setStatus('Kimi / Gemini / NotebookLM / Claude / Genspark / ChatGPT / Grok / Sakana AI / DeepSeek / Meta AI の会話ページで開いてください。');
       btn.disabled = true;
       return;
     }

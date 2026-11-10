@@ -644,6 +644,194 @@
         'h1',
         'title'
       ]
+    },
+    {
+      id: 'deepseek',
+      name: 'DeepSeek',
+      hosts: [
+        'chat.deepseek.com',
+        'deepseek.com'
+      ],
+      itemSelectors: [
+        '.ds-message',
+        '[class*="ds-message"]',
+        '[class*="chat-message"]',
+        '[data-role="user"]',
+        '[data-role="assistant"]',
+        '[class*="user-message"]',
+        '[class*="assistant-message"]',
+        '[class*="message-item"]',
+        '[class*="message-row"]',
+        '[class*="chat-turn"]',
+        '[class*="conversation-turn"]',
+        'div.ds-markdown',
+        '[class*="ds-markdown"]'
+      ],
+      userMatch: [
+        '[data-role="user"]',
+        '[data-message-role="user"]',
+        '[data-author="user"]',
+        '[class*="user-message"]',
+        '[class*="message-user"]',
+        '[class*="from-user"]',
+        '[class*="is-user"]',
+        '[class*="bubble-user"]',
+        '[class*="justify-end"]',
+        '[class*="items-end"]',
+        '[class*="self-end"]',
+        '[class*="ml-auto"]'
+      ],
+      assistantMatch: [
+        '[data-role="assistant"]',
+        '[data-role="model"]',
+        '[data-message-role="assistant"]',
+        '[data-author="assistant"]',
+        '[class*="assistant-message"]',
+        '[class*="message-assistant"]',
+        '[class*="from-ai"]',
+        '[class*="is-ai"]',
+        '.ds-markdown',
+        '[class*="ds-markdown"]',
+        '.markdown',
+        '[class*="markdown"]',
+        '.prose',
+        '[class*="prose"]'
+      ],
+      userContentSelectors: [
+        '[class*="query-text"]',
+        '[class*="query-content"]',
+        '[class*="prompt-text"]',
+        '[class*="user-content"]',
+        '[class*="user-message"]',
+        '[class*="bubble"]',
+        'p',
+        'span'
+      ],
+      assistantContentSelectors: [
+        '.ds-markdown',
+        '[class*="ds-markdown"]',
+        '.markdown-body',
+        '.markdown',
+        '[class*="markdown"]',
+        '.prose',
+        '[class*="prose"]',
+        '[class*="message-content"]',
+        '[class*="response-content"]'
+      ],
+      contentSelectors: [
+        '.ds-markdown',
+        '[class*="ds-markdown"]',
+        '.markdown-body',
+        '.markdown',
+        '[class*="markdown"]',
+        '.prose',
+        '[class*="prose"]',
+        '[class*="message-content"]'
+      ],
+      titleSelectors: [
+        '[class*="chat-title"]',
+        '[class*="conversation-title"]',
+        '[class*="session-title"]',
+        '[class*="history-item"][class*="active"]',
+        'header h1',
+        'h1',
+        'title'
+      ]
+    },
+    {
+      id: 'meta-ai',
+      name: 'Meta AI',
+      hosts: [
+        'meta.ai',
+        'www.meta.ai'
+      ],
+      itemSelectors: [
+        'div[role="article"]',
+        '[role="feed"] [role="article"]',
+        '[role="log"] [role="article"]',
+        '[data-testid*="message"]',
+        '[data-testid*="chat"]',
+        '[class*="chat-message"]',
+        '[class*="message-bubble"]',
+        '[class*="message_bubble"]',
+        '[class*="message-item"]',
+        '[class*="messageRow"]',
+        '[class*="message-row"]',
+        '[data-role="user"]',
+        '[data-role="assistant"]',
+        '[class*="user-message"]',
+        '[class*="assistant-message"]'
+      ],
+      userMatch: [
+        '[data-role="user"]',
+        '[data-author="user"]',
+        '[data-testid*="user"]',
+        '[class*="user-message"]',
+        '[class*="message-user"]',
+        '[class*="from-user"]',
+        '[class*="is-user"]',
+        '[class*="user"]',
+        '[class*="justify-end"]',
+        '[class*="items-end"]',
+        '[class*="self-end"]',
+        '[class*="ml-auto"]'
+      ],
+      assistantMatch: [
+        '[data-role="assistant"]',
+        '[data-role="model"]',
+        '[data-author="assistant"]',
+        '[data-testid*="assistant"]',
+        '[data-testid*="bot"]',
+        '[data-testid*="ai"]',
+        '[data-testid*="meta"]',
+        '[class*="assistant-message"]',
+        '[class*="message-assistant"]',
+        '[class*="ai-message"]',
+        '[class*="bot-message"]',
+        '[class*="from-ai"]',
+        '[class*="is-ai"]',
+        '[class*="markdown"]',
+        '.markdown',
+        '.prose',
+        '[class*="prose"]'
+      ],
+      userContentSelectors: [
+        '[class*="query-text"]',
+        '[class*="prompt-text"]',
+        '[class*="user-content"]',
+        '[class*="bubble"]',
+        '[class*="text"]',
+        'p',
+        'span'
+      ],
+      assistantContentSelectors: [
+        '[class*="markdown"]',
+        '.markdown',
+        '.prose',
+        '[class*="prose"]',
+        '[class*="message-content"]',
+        '[class*="response-content"]',
+        '[class*="bubble"]',
+        '[class*="text"]'
+      ],
+      contentSelectors: [
+        '[class*="markdown"]',
+        '.markdown',
+        '.prose',
+        '[class*="prose"]',
+        '[class*="message-content"]',
+        '[class*="response-content"]',
+        '[class*="bubble"]',
+        '[class*="text"]'
+      ],
+      titleSelectors: [
+        '[role="heading"][aria-level="1"]',
+        '[class*="chat-title"]',
+        '[class*="conversation-title"]',
+        'header h1',
+        'h1',
+        'title'
+      ]
     }
   ];
 
@@ -1688,7 +1876,7 @@
     } catch (_) { /* noop */ }
 
     // 思考プロセス・ツール呼び出し・検索ソース
-    const toolSels = '[class*="thinking"], [class*="reasoning"], [class*="source-card"], [class*="search-result"], [class*="copilot-step"]';
+    const toolSels = '[class*="thinking"], [class*="reasoning"], [class*="source-card"], [class*="search-result"], [class*="copilot-step"], [class*="ds-think"], .ds-think';
     try {
       if (el.matches(toolSels)) return true;
     } catch (_) { /* noop */ }
