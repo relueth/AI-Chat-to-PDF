@@ -158,6 +158,26 @@ body {
   background: #4338ca !important;
   border-color: #4338ca !important;
 }
+.tbtn-zip {
+  background: linear-gradient(135deg, #4338ca, #6366f1) !important;
+  border-color: #4338ca !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 4px rgba(79, 70, 229, 0.35) !important;
+}
+.tbtn-zip:hover {
+  background: linear-gradient(135deg, #3730a3, #4f46e5) !important;
+  border-color: #3730a3 !important;
+}
+.zip-count-badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 4px;
+}
 .tbtn-muted {
   background: transparent !important;
   border-color: #334155 !important;
@@ -713,6 +733,207 @@ body {
     background: transparent;
     border-color: #93c5fd;
     color: #1e40af;
+  }
+}
+
+/* ============================================================
+   Gemini Notebook 登録ソース一覧セクション
+   ============================================================ */
+.sources-section {
+  margin-top: 28px;
+  padding: 16px 20px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.sources-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sources-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sources-icon {
+  width: 18px;
+  height: 18px;
+  color: #4338ca;
+}
+.sources-heading {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+.sources-hint {
+  font-size: 11px;
+  color: #64748b;
+}
+.sources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.source-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  transition: all 0.15s ease;
+}
+.source-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.source-card-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+.source-badge-pill {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.source-badge-pill.pdf { background: #fee2e2; color: #b91c1c; }
+.source-badge-pill.google-doc { background: #dbeafe; color: #1e40af; }
+.source-badge-pill.google-slides { background: #fef3c7; color: #b45309; }
+.source-badge-pill.web { background: #e0f2fe; color: #0369a1; }
+.source-badge-pill.youtube { background: #ffe4e6; color: #be123c; }
+.source-badge-pill.text { background: #f1f5f9; color: #475569; }
+.source-badge-pill.note { background: #fef08a; color: #854d0e; }
+.source-badge-pill.audio { background: #ede9fe; color: #6d28d9; }
+.source-badge-pill.document { background: #e2e8f0; color: #334155; }
+
+.source-title-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  word-break: break-word;
+}
+.source-summary-text {
+  font-size: 11.5px;
+  color: #64748b;
+  margin-top: 4px;
+  line-height: 1.45;
+}
+.source-guide-box {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+}
+.source-guide-box-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #6d28d9;
+  margin-bottom: 4px;
+}
+.source-guide-box-content {
+  font-size: 11px;
+  color: #334155;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.source-image-preview {
+  margin-top: 10px;
+  max-width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+}
+.source-image-preview img {
+  max-width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  display: block;
+  border-radius: 4px;
+}
+.source-url-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #2563eb;
+  text-decoration: none;
+  margin-top: 4px;
+  word-break: break-all;
+}
+.source-url-link:hover {
+  text-decoration: underline;
+}
+.source-text-block {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #334155;
+  line-height: 1.5;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.source-citations-wrap {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: #475569;
+}
+.source-citations-title {
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 2px;
+}
+.source-citation-quote {
+  font-style: italic;
+  padding-left: 8px;
+  border-left: 2px solid #cbd5e1;
+  margin-top: 2px;
+  color: #64748b;
+}
+
+@media print {
+  .sources-section {
+    background: transparent !important;
+    border-color: #e2e8f0 !important;
+    margin-top: 20px !important;
+    padding: 12px 14px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  .source-card {
+    border-color: #e2e8f0 !important;
+    padding: 8px 10px !important;
+  }
+  .source-text-block {
+    max-height: none !important;
+    overflow: visible !important;
   }
 }
 

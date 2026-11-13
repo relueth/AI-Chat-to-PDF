@@ -68,7 +68,7 @@
   "background": {
     "service_worker": "background/background.js"
   },
-  "permissions": ["storage", "activeTab", "tabs", "scripting"],
+  "permissions": ["storage", "unlimitedStorage", "activeTab", "tabs", "scripting"],
   "host_permissions": [
     "<all_urls>"
   ],
@@ -78,7 +78,10 @@
         "export/export.html",
         "lib/katex/*",
         "lib/katex/fonts/*",
-        "lib/mathjax/*"
+        "lib/mathjax/*",
+        "lib/jszip/*",
+        "lib/jspdf/*",
+        "lib/html2canvas/*"
       ],
       "matches": ["<all_urls>"]
     }

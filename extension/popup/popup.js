@@ -29,6 +29,10 @@
   const formatInputs = document.querySelectorAll('input[name="format"]');
 
   let activeTab = null;
+  let currentSiteId = null;
+
+  const notebookInputs = document.querySelectorAll('input[name="notebook-mode"]');
+  const notebookSection = document.getElementById('notebook-source-options');
 
   const FORMAT_INFO = {
     pdf: {
@@ -53,13 +57,33 @@
     return (checked && checked.value) || 'pdf';
   }
 
+  function getSelectedNotebookMode() {
+    const checked = document.querySelector('input[name="notebook-mode"]:checked');
+    return (checked && checked.value) || 'pdf-only';
+  }
+
   function updateFormatUI() {
-    const info = FORMAT_INFO[getSelectedFormat()] || FORMAT_INFO.pdf;
-    btnLabel.textContent = info.label;
-    formatHint.textContent = info.hint;
+    const format = getSelectedFormat();
+    const isNotebook = (currentSiteId === 'gemini-notebook');
+
+    if (notebookSection) {
+      notebookSection.style.display = (isNotebook && format === 'pdf') ? 'block' : 'none';
+    }
+
+    if (isNotebook && format === 'pdf' && getSelectedNotebookMode() === 'pdf-zip') {
+      btnLabel.textContent = 'PDF＋ソースをZIP出力';
+      formatHint.textContent = 'Gemini Notebookの会話PDFに加え、登録されている全ソースデータ（テキスト・URL・メタデータ・元ファイル等）を一括ZIP出力します。';
+    } else {
+      const info = FORMAT_INFO[format] || FORMAT_INFO.pdf;
+      btnLabel.textContent = info.label;
+      formatHint.textContent = info.hint;
+    }
   }
 
   for (const input of formatInputs) {
+    input.addEventListener('change', updateFormatUI);
+  }
+  for (const input of notebookInputs) {
     input.addEventListener('change', updateFormatUI);
   }
 
@@ -140,24 +164,50 @@
     }
 
     const siteId = siteFromUrl(tab.url);
+    currentSiteId = siteId;
     const info = SITE_INFO[siteId] || { name: siteId, className: '' };
     badge.textContent = info.name;
     badge.classList.add(info.className);
+    updateFormatUI();
     setStatus('形式を選んでボタンを押すと、会話全体を抽出して変換します。');
     btn.disabled = false;
   }
 
   async function ensureContentScript(tabId) {
-    // content scriptが未注入(インストール直後など)の場合に手動注入
+    // content scriptが未注入(インストール直後や拡張更新直後など)の場合に手動注入
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: ['content/content.js']
-      });
-    } catch (_) { /* 既に注入済みの場合もある */ }
+      if (chrome.scripting && chrome.scripting.executeScript) {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content/content.js']
+        });
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    } catch (e) {
+      console.warn('Script injection warning:', e);
+    }
   }
 
-  function extractWithTimeout(tabId, timeoutMs = 120000) {
+  function pingContentScript(tabId, timeoutMs = 1200) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      try {
+        chrome.tabs.sendMessage(tabId, { type: 'AI2PDF_PING_TAB' }, (resp) => {
+          clearTimeout(timer);
+          if (chrome.runtime.lastError || !resp || !resp.ok) {
+            resolve(false);
+          } else {
+            resolve(true);
+          }
+        });
+      } catch (_) {
+        clearTimeout(timer);
+        resolve(false);
+      }
+    });
+  }
+
+  function extractWithTimeout(tabId, timeoutMs = 300000) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs);
       chrome.tabs.sendMessage(tabId, { type: 'AI2PDF_EXTRACT' }, (resp) => {
@@ -169,6 +219,19 @@
     });
   }
 
+  async function savePayloadToStorage(payload) {
+    // 前回の残存データをクリア
+    try { await chrome.storage.session.remove('ai2pdf_payload'); } catch (_) {}
+    try { await chrome.storage.local.remove('ai2pdf_payload'); } catch (_) {}
+
+    try {
+      await chrome.storage.session.set({ ai2pdf_payload: payload });
+    } catch (sessionErr) {
+      console.warn('Session storage quota exceeded, falling back to local storage:', sessionErr);
+      await chrome.storage.local.set({ ai2pdf_payload: payload });
+    }
+  }
+
   async function exportPdf() {
     if (!activeTab) return;
     btn.disabled = true;
@@ -176,14 +239,12 @@
     progressText.textContent = '会話を抽出しています…';
 
     try {
-      let resp;
-      try {
-        resp = await extractWithTimeout(activeTab.id, 45000);
-      } catch (_) {
-        // 未注入の可能性 → 手動注入してリトライ
+      const alive = await pingContentScript(activeTab.id);
+      if (!alive) {
         await ensureContentScript(activeTab.id);
-        resp = await extractWithTimeout(activeTab.id, 120000);
       }
+
+      const resp = await extractWithTimeout(activeTab.id, 300000);
 
       if (!resp || !resp.ok) {
         const map = {
@@ -198,25 +259,31 @@
 
       const payload = resp.data;
       const format = getSelectedFormat();
+      const isNotebookZip = (currentSiteId === 'gemini-notebook' && format === 'pdf' && getSelectedNotebookMode() === 'pdf-zip');
+
       const info = FORMAT_INFO[format] || FORMAT_INFO.pdf;
-      setStatus(`${payload.messages.length} 件のメッセージを抽出しました。${info.done}`);
+      const doneMsg = isNotebookZip ? 'ZIPエクスポートページを開きます…' : info.done;
+      setStatus(`${payload.messages.length} 件のメッセージを抽出しました。${doneMsg}`);
 
-      // セッションストレージへ保存(大きなHTML・Base64画像も扱える)
-      try {
-        await chrome.storage.session.set({ ai2pdf_payload: payload });
-      } catch (storageErr) {
-        console.warn('Session storage save warning:', storageErr);
-        // クォータ超過対策: 画像の余分な属性等をトリミングして再試行
-        await chrome.storage.session.set({ ai2pdf_payload: payload });
+      // セッションストレージ（上限10MB超過時はlocalストレージ）へ保存
+      if (isNotebookZip) {
+        payload.notebookExportMode = 'pdf-zip';
       }
+      await savePayloadToStorage(payload);
 
-      // エクスポートページを新しいタブで開く(形式をクエリで渡す)
-      const url = chrome.runtime.getURL('export/export.html') + '?format=' + encodeURIComponent(format);
+      // エクスポートページを新しいタブで開く(形式とモードをクエリで渡す)
+      const modeQuery = isNotebookZip ? '&mode=pdf-zip' : '';
+      const url = chrome.runtime.getURL('export/export.html') + '?format=' + encodeURIComponent(format) + modeQuery;
       await chrome.tabs.create({ url });
 
       window.close();
     } catch (e) {
-      setStatus('エラー: ' + (e && e.message ? e.message : String(e)), true);
+      const msg = (e && e.message ? e.message : String(e));
+      if (msg.includes('Receiving end does not exist') || msg.includes('Could not establish connection')) {
+        setStatus('接続エラー: 拡張機能の更新直後は、NotebookLMのタブを一度ブラウザで再読み込み（F5 または ⌘R）してから再度お試しください。', true);
+      } else {
+        setStatus('エラー: ' + msg, true);
+      }
     } finally {
       progress.classList.add('hidden');
       btn.disabled = false;
@@ -226,7 +293,11 @@
   // 抽出の進捗表示(content scriptから通知)
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg && msg.type === 'AI2PDF_PROGRESS') {
-      progressText.textContent = `会話を抽出しています… (${msg.count} 件)`;
+      if (msg.statusText) {
+        progressText.textContent = msg.statusText;
+      } else if (typeof msg.count === 'number') {
+        progressText.textContent = `会話を抽出しています… (${msg.count} 件)`;
+      }
     }
   });
 

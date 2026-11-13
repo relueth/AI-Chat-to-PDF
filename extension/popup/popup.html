@@ -46,6 +46,31 @@
           </span>
         </label>
       </div>
+      <p id="format-hint" class="format-hint"></p>
+    </section>
+
+    <!-- Gemini Notebook 専用: 出力方法選択 (PDF選択時のみ表示) -->
+    <section id="notebook-source-options" class="notebook-options" style="display:none;">
+      <p class="format-label">Gemini Notebook 出力オプション</p>
+      <div class="notebook-mode-cards" role="radiogroup" aria-label="Gemini Notebook 出力オプション">
+        <label class="notebook-mode-option">
+          <input type="radio" name="notebook-mode" value="pdf-only" checked>
+          <span class="notebook-mode-card">
+            <span class="notebook-mode-title">PDF単体で出力</span>
+            <span class="notebook-mode-desc">現在のPDF出力と同じ動作（印刷画面で保存）</span>
+          </span>
+        </label>
+        <label class="notebook-mode-option">
+          <input type="radio" name="notebook-mode" value="pdf-zip">
+          <span class="notebook-mode-card">
+            <span class="notebook-mode-title">
+              PDF＋ソースをZIPで出力
+              <span class="badge-recommend">推奨</span>
+            </span>
+            <span class="notebook-mode-desc">会話PDFと登録ソース（テキスト・URL・元ファイル等）を一括ZIP出力</span>
+          </span>
+        </label>
+      </div>
     </section>
 
     <section class="actions">

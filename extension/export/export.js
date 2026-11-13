@@ -25,10 +25,20 @@
   const inputCustomAiName = document.getElementById('input-custom-ai-name');
   const optAiSite = document.getElementById('opt-ai-site');
   const btnPrint = document.getElementById('btn-print');
+  const btnNotebookZip = document.getElementById('btn-notebook-zip');
+  const tbSourceCountBadge = document.getElementById('tb-source-count-badge');
   const btnDlHtml = document.getElementById('btn-dl-html');
   const btnCopyHtml = document.getElementById('btn-copy-html');
   const btnDlText = document.getElementById('btn-dl-text');
   const btnClose = document.getElementById('btn-close');
+
+  // Gemini Notebook ソース用DOM要素
+  const sourcesSection = document.getElementById('sources-section');
+  const sourcesCountEl = document.getElementById('sources-count');
+  const sourcesListEl = document.getElementById('sources-list');
+  const zipProgressModal = document.getElementById('zip-progress-modal');
+  const zipProgressStatus = document.getElementById('zip-progress-status');
+  const zipProgressDetail = document.getElementById('zip-progress-detail');
 
   // カスタムレイアウト用DOM要素
   const customModalEl = document.getElementById('custom-layout-modal');
@@ -1338,6 +1348,1228 @@
 
     // コントロールバーと件数バッジの状態更新
     updateControlBarState();
+
+    // Gemini Notebook 登録ソースの描画
+    renderSources(payload);
+  }
+
+  // ---------------------------------------------------------------
+  // Gemini Notebook: 登録ソースの描画
+  // ---------------------------------------------------------------
+  // ---------------------------------------------------------------
+  // Gemini Notebook: 登録ソースの描画
+  // ---------------------------------------------------------------
+  function renderSources(payload) {
+    const isNotebook = (payload && payload.site === 'gemini-notebook');
+    const sources = (payload && payload.sources) || [];
+    const hasSources = sources.length > 0;
+
+    if (btnNotebookZip) {
+      if (isNotebook || hasSources) {
+        btnNotebookZip.style.display = 'inline-flex';
+        if (tbSourceCountBadge) {
+          tbSourceCountBadge.textContent = `${sources.length}件`;
+          tbSourceCountBadge.style.display = 'inline-block';
+        }
+      } else {
+        btnNotebookZip.style.display = 'none';
+      }
+    }
+
+    if (!sourcesSection || !sourcesListEl) return;
+
+    if ((isNotebook || hasSources) && hasSources) {
+      sourcesSection.style.display = 'block';
+      if (sourcesCountEl) sourcesCountEl.textContent = String(sources.length);
+      sourcesListEl.innerHTML = '';
+
+      sources.forEach((src, idx) => {
+        const card = document.createElement('div');
+        card.className = 'source-card';
+
+        const top = document.createElement('div');
+        top.className = 'source-card-top';
+
+        const main = document.createElement('div');
+        main.className = 'source-card-main';
+
+        const numBadge = document.createElement('span');
+        numBadge.className = 'citation-badge';
+        numBadge.textContent = `[${src.index || idx + 1}]`;
+        main.appendChild(numBadge);
+
+        const typePill = document.createElement('span');
+        const sType = src.type || 'document';
+        typePill.className = `source-badge-pill ${sType}`;
+        typePill.textContent = sType.replace('-', ' ');
+        main.appendChild(typePill);
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'source-title-text';
+        titleSpan.textContent = src.title || `ソース [${src.index || idx + 1}]`;
+        main.appendChild(titleSpan);
+
+        top.appendChild(main);
+
+        if (src.url) {
+          const a = document.createElement('a');
+          a.className = 'source-url-link';
+          a.href = src.url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.title = '元のソースを開く';
+          a.innerHTML = `
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+            <span>${escapeHtml(src.url.replace(/^https?:\/\//i, '').substring(0, 45))}${src.url.length > 55 ? '…' : ''}</span>
+          `;
+          top.appendChild(a);
+        }
+
+        card.appendChild(top);
+
+        const guideText = src.guide || src.summary || '';
+        if (guideText && guideText !== 'Gemini Notebook 登録ソース') {
+          const guideBox = document.createElement('div');
+          guideBox.className = 'source-guide-box';
+          guideBox.innerHTML = `
+            <div class="source-guide-box-header">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L15 8L22 12L15 16L12 22L9 16L2 12L9 8L12 2Z"></path>
+              </svg>
+              <span>ソースガイド</span>
+            </div>
+            <div class="source-guide-box-content">${escapeHtml(guideText)}</div>
+          `;
+          card.appendChild(guideBox);
+        }
+
+        const rawPreviewSrc = (src.fileDataUrl && src.fileDataUrl.startsWith('data:image/'))
+          ? src.fileDataUrl
+          : (src.imageUrl || src.fallbackImageUrl || '');
+        const imgPreviewSrc = (rawPreviewSrc && rawPreviewSrc.includes('googleusercontent.com') && /=([swh]\d+)/i.test(rawPreviewSrc))
+          ? rawPreviewSrc.replace(/=([swh]\d+)(-[a-z0-9_-]+)*(?=[?#]|$)/i, '=w640')
+          : rawPreviewSrc;
+        if (imgPreviewSrc) {
+          const imgWrap = document.createElement('div');
+          imgWrap.className = 'source-image-preview';
+          imgWrap.innerHTML = `<img src="${escapeHtml(imgPreviewSrc)}" data-fallback-url="${escapeHtml(src.fallbackImageUrl || '')}" data-source-idx="${idx}" alt="${escapeHtml(src.title)}" />`;
+          card.appendChild(imgWrap);
+        }
+
+        if (src.citations && src.citations.length > 0) {
+          const citWrap = document.createElement('div');
+          citWrap.className = 'source-citations-wrap';
+          citWrap.innerHTML = '<div class="source-citations-title">💬 会話内での引用箇所:</div>';
+          src.citations.forEach((c) => {
+            const q = document.createElement('div');
+            q.className = 'source-citation-quote';
+            q.textContent = `“${c}”`;
+            citWrap.appendChild(q);
+          });
+          card.appendChild(citWrap);
+        }
+
+        if (src.text && src.text.trim().length > 0) {
+          const textBlock = document.createElement('div');
+          textBlock.className = 'source-text-block';
+          textBlock.textContent = src.text.trim();
+          card.appendChild(textBlock);
+        }
+
+        sourcesListEl.appendChild(card);
+      });
+    } else {
+      sourcesSection.style.display = 'none';
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // 軽量ヘルパー: メモリ解放・UIスレッド譲歩・Base64→Uint8Array変換
+  // ---------------------------------------------------------------
+  function yieldToUi() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  function releaseCanvas(canvas) {
+    if (!canvas) return;
+    try {
+      canvas.width = 0;
+      canvas.height = 0;
+    } catch (_) {}
+  }
+
+  function base64ToUint8Array(base64) {
+    const clean = String(base64 || '').replace(/\s+/g, '');
+    const bin = atob(clean);
+    const len = bin.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = bin.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  async function decodeImageForCanvas(srcUrl) {
+    if (!srcUrl) return null;
+    try {
+      if (typeof createImageBitmap === 'function') {
+        const resp = await fetch(srcUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          const bitmap = await createImageBitmap(blob);
+          return { kind: 'bitmap', img: bitmap, width: bitmap.width, height: bitmap.height };
+        }
+      }
+    } catch (_) {}
+    return new Promise((resolve) => {
+      const im = new Image();
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        if (ok && (im.naturalWidth || im.width) > 0) {
+          resolve({ kind: 'element', img: im, width: im.naturalWidth || im.width, height: im.naturalHeight || im.height });
+        } else {
+          resolve(null);
+        }
+      };
+      im.onload = () => finish(true);
+      im.onerror = () => finish(false);
+      setTimeout(() => finish(false), 3000);
+      im.src = srcUrl;
+    });
+  }
+
+  function wrapTextForCanvas(ctx, rawText, maxWidth) {
+    const out = [];
+    const lines = String(rawText || '').split(/\r?\n/);
+    for (const rawLine of lines) {
+      if (!rawLine) {
+        out.push('');
+        continue;
+      }
+      if (ctx.measureText(rawLine).width <= maxWidth) {
+        out.push(rawLine);
+        continue;
+      }
+      let start = 0;
+      while (start < rawLine.length) {
+        // バイナリサーチでmaxWidth内に収まる最大文字数を高速特定
+        let lo = 1;
+        let hi = rawLine.length - start;
+        let best = 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (ctx.measureText(rawLine.slice(start, start + mid)).width <= maxWidth) {
+            best = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        if (start + best < rawLine.length && best > 8) {
+          // 句読点・スペース付近できれいに折り返し
+          const slice = rawLine.slice(start, start + best);
+          const breakMatch = slice.match(/^(.{6,}[、。．，,.\s）)］\]」』】])[^、。．，,.\s）)］\]」』】]{0,8}$/);
+          if (breakMatch && breakMatch[1].length >= Math.floor(best * 0.6)) {
+            best = breakMatch[1].length;
+          }
+        }
+        out.push(rawLine.slice(start, start + best));
+        start += best;
+      }
+    }
+    return out;
+  }
+
+  function drawRoundedRectPath(ctx, x, y, w, h, r) {
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  }
+
+  // ---------------------------------------------------------------
+  // ソース単体PDF生成ヘルパー (単一Canvas直接描画で超高速・省メモリ生成)
+  // ---------------------------------------------------------------
+  async function generateSourcePdf(src, notebookTitle, overrideImageDataUrl = '') {
+    if (typeof jspdf === 'undefined') {
+      return null;
+    }
+
+    const { jsPDF } = jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = 210;
+    const pageHeight = 297;
+
+    // 144 DPI 相当の軽量固定A4キャンバス (1枚分 ~7MB RAM を全ページで使い回し)
+    const W = 1120;
+    const H = 1584;
+    const MX = 58;
+    const TOP_Y = 54;
+    const BOT_Y = 1524;
+    const CONTENT_W = W - MX * 2;
+    const FONT_SANS = '"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "Noto Sans JP", system-ui, -apple-system, sans-serif';
+    const MAX_PAGES = 200;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) {
+      releaseCanvas(canvas);
+      return null;
+    }
+
+    let pageNum = 1;
+    let pagesAdded = 0;
+    let y = TOP_Y;
+    const titleStr = String(src.title || '無題のソース');
+
+    function resetPageCanvas(isFirstPage) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      if (isFirstPage) {
+        y = TOP_Y;
+      } else {
+        ctx.font = `600 14px ${FONT_SANS}`;
+        ctx.fillStyle = '#64748b';
+        ctx.textBaseline = 'top';
+        const shortTitle = titleStr.length > 55 ? titleStr.slice(0, 54) + '…' : titleStr;
+        ctx.fillText(shortTitle, MX, 36);
+        const pageLabel = `Page ${pageNum}`;
+        const labelW = ctx.measureText(pageLabel).width;
+        ctx.fillText(pageLabel, W - MX - labelW, 36);
+
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(MX, 62);
+        ctx.lineTo(W - MX, 62);
+        ctx.stroke();
+        y = 84;
+      }
+    }
+
+    function flushCurrentPage() {
+      const imgData = canvas.toDataURL('image/jpeg', 0.84);
+      if (!imgData || imgData.length < 40) return false;
+      if (pagesAdded > 0) pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
+      pagesAdded++;
+      return true;
+    }
+
+    async function nextPage() {
+      flushCurrentPage();
+      if (pageNum >= MAX_PAGES) {
+        return false;
+      }
+      pageNum++;
+      resetPageCanvas(false);
+      if (pageNum % 5 === 0) {
+        await yieldToUi();
+      }
+      return true;
+    }
+
+    try {
+      resetPageCanvas(true);
+      ctx.textBaseline = 'top';
+
+      const sType = (src.type || 'document').toUpperCase();
+      const isPdfDoc = (src.type === 'pdf') || /\.pdf$/i.test(titleStr);
+      const dateStr = formatDate(new Date().toISOString());
+
+      // ヘッダー描画
+      ctx.font = `600 14.5px ${FONT_SANS}`;
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(isPdfDoc ? (notebookTitle || 'NotebookLM') : 'GEMINI NOTEBOOK 登録ソース', MX, y);
+      if (dateStr) {
+        const dw = ctx.measureText(dateStr).width;
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(dateStr, W - MX - dw, y);
+      }
+      y += 26;
+
+      ctx.font = `700 24px ${FONT_SANS}`;
+      ctx.fillStyle = '#0f172a';
+      const titleLines = wrapTextForCanvas(ctx, titleStr, CONTENT_W).slice(0, 4);
+      for (const tl of titleLines) {
+        ctx.fillText(tl, MX, y);
+        y += 33;
+      }
+
+      if (!isPdfDoc) {
+        y += 2;
+        ctx.font = `500 14.5px ${FONT_SANS}`;
+        ctx.fillStyle = '#475569';
+        ctx.fillText(`種別: ${sType}   |   ノートブック: ${notebookTitle || 'Gemini Notebook'}`, MX, y);
+        y += 24;
+      }
+
+      if (src.url) {
+        y += 2;
+        ctx.font = `500 14px ${FONT_SANS}`;
+        ctx.fillStyle = '#2563eb';
+        const urlLines = wrapTextForCanvas(ctx, `URL: ${src.url}`, CONTENT_W).slice(0, 3);
+        for (const ul of urlLines) {
+          ctx.fillText(ul, MX, y);
+          y += 21;
+        }
+      }
+
+      y += 8;
+      ctx.strokeStyle = isPdfDoc ? '#0f172a' : '#cbd5e1';
+      ctx.lineWidth = isPdfDoc ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(MX, y);
+      ctx.lineTo(W - MX, y);
+      ctx.stroke();
+      y += 22;
+
+      // ソースガイド描画
+      const guideText = (src.guide || src.summary || '').trim();
+      const hasGuide = Boolean(guideText && guideText !== 'Gemini Notebook 登録ソース' && guideText !== '画像ソース' && guideText !== 'PDFソース');
+      if (hasGuide) {
+        ctx.font = `400 16px ${FONT_SANS}`;
+        const guideLines = wrapTextForCanvas(ctx, guideText, CONTENT_W - 44);
+        const lineH = 25;
+        let gIdx = 0;
+        while (gIdx < guideLines.length) {
+          if (y + 90 > BOT_Y) {
+            if (!(await nextPage())) break;
+          }
+          const availLines = Math.max(1, Math.floor((BOT_Y - y - 54) / lineH));
+          const chunk = guideLines.slice(gIdx, gIdx + availLines);
+          const boxH = 44 + chunk.length * lineH + 14;
+
+          drawRoundedRectPath(ctx, MX, y, CONTENT_W, boxH, 10);
+          ctx.fillStyle = '#f8fafc';
+          ctx.fill();
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          ctx.fillStyle = '#4f46e5';
+          ctx.fillRect(MX, y + 2, 6, boxH - 4);
+
+          ctx.font = `700 16px ${FONT_SANS}`;
+          ctx.fillStyle = '#4338ca';
+          ctx.fillText(gIdx === 0 ? '✦ ソース概要' : '✦ ソース概要（続き）', MX + 22, y + 14);
+
+          ctx.font = `400 16px ${FONT_SANS}`;
+          ctx.fillStyle = '#334155';
+          let gy = y + 44;
+          for (const gl of chunk) {
+            ctx.fillText(gl, MX + 22, gy);
+            gy += lineH;
+          }
+          y += boxH + 18;
+          gIdx += chunk.length;
+        }
+      }
+
+      // 添付画像描画 (ある場合)
+      const imgUrl = overrideImageDataUrl || (src.fileDataUrl && src.fileDataUrl.startsWith('data:image/') ? src.fileDataUrl : '');
+      if (imgUrl) {
+        const decoded = await decodeImageForCanvas(imgUrl);
+        if (decoded && decoded.width > 0 && decoded.height > 0) {
+          try {
+            if (BOT_Y - y < 340) {
+              await nextPage();
+            }
+            const maxImgW = CONTENT_W;
+            const maxImgH = Math.min(880, BOT_Y - y - 16);
+            const ratio = Math.min(maxImgW / decoded.width, maxImgH / decoded.height, 1.5);
+            const drawW = Math.max(1, Math.round(decoded.width * ratio));
+            const drawH = Math.max(1, Math.round(decoded.height * ratio));
+            const drawX = MX + Math.round((CONTENT_W - drawW) / 2);
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(drawX - 4, y - 4, drawW + 8, drawH + 8);
+            ctx.drawImage(decoded.img, drawX, y, drawW, drawH);
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(drawX - 4, y - 4, drawW + 8, drawH + 8);
+            y += drawH + 24;
+          } finally {
+            if (decoded.kind === 'bitmap' && decoded.img && typeof decoded.img.close === 'function') {
+              try { decoded.img.close(); } catch (_) {}
+            }
+          }
+        }
+      }
+
+      // 本文テキスト描画
+      const bodyText = (src.text || '').trim();
+      if (bodyText) {
+        if (!isPdfDoc) {
+          if (y + 70 > BOT_Y) {
+            await nextPage();
+          }
+          ctx.font = `700 18px ${FONT_SANS}`;
+          ctx.fillStyle = '#0f172a';
+          ctx.fillText('本文', MX, y);
+          y += 28;
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(MX, y);
+          ctx.lineTo(W - MX, y);
+          ctx.stroke();
+          y += 16;
+        }
+
+        ctx.font = `400 16.5px ${FONT_SANS}`;
+        const bodyLineH = 26.5;
+        const wrappedBody = wrapTextForCanvas(ctx, bodyText, CONTENT_W);
+        let truncatedByCap = false;
+
+        for (let li = 0; li < wrappedBody.length; li++) {
+          if (y + bodyLineH > BOT_Y) {
+            if (!(await nextPage())) {
+              truncatedByCap = true;
+              break;
+            }
+            ctx.font = `400 16.5px ${FONT_SANS}`;
+          }
+          const line = wrappedBody[li];
+          if (line) {
+            ctx.fillStyle = '#0f172a';
+            ctx.fillText(line, MX, y);
+          }
+          y += bodyLineH;
+        }
+
+        if (truncatedByCap) {
+          ctx.font = `600 14px ${FONT_SANS}`;
+          ctx.fillStyle = '#64748b';
+          ctx.fillText('（※長文のため、以降の全文は同フォルダ内の .txt ファイルに収録されています）', MX, Math.min(y + 4, BOT_Y - 18));
+        }
+      }
+
+      flushCurrentPage();
+      return pagesAdded > 0 ? pdf.output('arraybuffer') : null;
+    } catch (err) {
+      console.warn('generateSourcePdf error:', err);
+      return null;
+    } finally {
+      releaseCanvas(canvas);
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // 会話PDF生成ヘルパー (ブロック単位でページ分割し1度に巨大Canvasを作らない)
+  // ---------------------------------------------------------------
+  async function generateConversationPdf(payload, zipStatus, zipDetail) {
+    if (typeof html2canvas === 'undefined' || typeof jspdf === 'undefined') {
+      return null;
+    }
+
+    const docEl = document.getElementById('document');
+    if (!docEl) return null;
+
+    const docClone = docEl.cloneNode(true);
+    docClone.querySelectorAll('.no-print, .edit-bar, .empty-notice, .msg-header-right, .msg-select-wrap').forEach((n) => n.remove());
+    docClone.querySelectorAll('.msg.is-deleted').forEach((n) => n.remove());
+    docClone.querySelectorAll('.msg.is-selected').forEach((n) => n.classList.remove('is-selected'));
+
+    // 公開用表示モード適用
+    if (currentPublishMode === 'clean-blog') {
+      docClone.querySelectorAll('.doc-meta-url, .doc-footer').forEach((n) => n.remove());
+    } else if (currentPublishMode === 'messages-only') {
+      docClone.querySelectorAll('.doc-header, .doc-footer').forEach((n) => n.remove());
+    }
+
+    // 登録ソースセクションを会話PDF向けにコンパクト化 (長文本文は sources/ に完全保存されているため要約表示)
+    const clonedSources = docClone.querySelectorAll('.source-card');
+    clonedSources.forEach((card) => {
+      const tb = card.querySelector('.source-text-block');
+      if (tb) {
+        const rawTxt = (tb.textContent || '').trim();
+        if (rawTxt.length > 900) {
+          tb.textContent = rawTxt.slice(0, 900) + '\n…（全文は ZIP内の sources/ フォルダ個別ファイルに収録）';
+        }
+        tb.style.maxHeight = 'none';
+        tb.style.overflow = 'visible';
+      }
+      card.querySelectorAll('.source-image-preview img').forEach((im) => {
+        im.style.maxHeight = '180px';
+      });
+    });
+
+    const { jsPDF } = jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const margin = 10;
+    const contentWidth = pageWidth - margin * 2;
+    const contentHeightMm = pageHeight - margin * 2;
+    const cssWidth = 780;
+    const maxPageCssHeight = Math.floor(cssWidth * (contentHeightMm / contentWidth)) - 16;
+
+    // 描画対象ブロックを順番に収集 (巨大メッセージは子要素単位で安全に分割)
+    const blocks = [];
+    const headerEl = docClone.querySelector('#doc-header');
+    if (headerEl && headerEl.innerHTML.trim()) blocks.push(headerEl);
+
+    const msgNodes = [...docClone.querySelectorAll('#messages > .msg')];
+    for (const msg of msgNodes) {
+      const bodyEl = msg.querySelector('.msg-body');
+      if (bodyEl && bodyEl.children.length > 6 && (bodyEl.textContent || '').length > 2600) {
+        const msgHeader = msg.querySelector('.msg-header');
+        const msgClass = msg.className;
+        const bodyChildren = [...bodyEl.children];
+        const CHUNK = 4;
+        for (let ci = 0; ci < bodyChildren.length; ci += CHUNK) {
+          const part = document.createElement('article');
+          part.className = msgClass;
+          if (ci === 0 && msgHeader) {
+            part.appendChild(msgHeader.cloneNode(true));
+          }
+          const partBody = document.createElement('div');
+          partBody.className = 'msg-body';
+          for (let j = ci; j < Math.min(ci + CHUNK, bodyChildren.length); j++) {
+            partBody.appendChild(bodyChildren[j]);
+          }
+          part.appendChild(partBody);
+          blocks.push(part);
+        }
+      } else {
+        blocks.push(msg);
+      }
+    }
+
+    const srcSectionEl = docClone.querySelector('#sources-section');
+    if (srcSectionEl && srcSectionEl.style.display !== 'none') {
+      const srcHeaderEl = srcSectionEl.querySelector('.sources-header');
+      if (srcHeaderEl) {
+        const wrapHead = document.createElement('div');
+        wrapHead.className = 'sources-section';
+        wrapHead.style.cssText = 'margin-top:16px;padding:12px 14px;';
+        wrapHead.appendChild(srcHeaderEl);
+        blocks.push(wrapHead);
+      }
+      clonedSources.forEach((sc) => {
+        sc.style.marginBottom = '10px';
+        blocks.push(sc);
+      });
+    }
+
+    const footerEl = docClone.querySelector('#doc-footer');
+    if (footerEl && footerEl.innerHTML.trim()) blocks.push(footerEl);
+
+    const sandbox = document.createElement('div');
+    sandbox.style.cssText = `position:fixed;left:-9999px;top:0;width:${cssWidth}px;background:#ffffff;padding:18px 24px;box-sizing:border-box;z-index:-1;box-shadow:none;margin:0;display:flex;flex-direction:column;gap:14px;`;
+    sandbox.className = `document ${currentLayoutTheme || 'theme-default'} mode-${currentPublishMode}`;
+    document.body.appendChild(sandbox);
+
+    let pagesWritten = 0;
+
+    async function flushSandbox() {
+      if (sandbox.children.length === 0) return;
+      await new Promise((r) => setTimeout(r, 30));
+      const sh = Math.max(1, sandbox.scrollHeight);
+      const safeScale = Math.min(1.5, Math.max(0.75, 9000 / sh));
+      const canvas = await html2canvas(sandbox, {
+        scale: safeScale,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+
+      try {
+        if (!canvas || canvas.width === 0 || canvas.height === 0) return;
+        const pagePxH = Math.floor(canvas.width * (contentHeightMm / contentWidth));
+        if (canvas.height <= pagePxH + 10) {
+          const imgData = canvas.toDataURL('image/jpeg', 0.88);
+          const renderH = (canvas.height * contentWidth) / canvas.width;
+          if (pagesWritten > 0) pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, Math.min(renderH, contentHeightMm), undefined, 'FAST');
+          pagesWritten++;
+        } else {
+          // 万一1ブロックが1ページを超えた場合はスライス用小キャンバスで分割して確実に収める
+          const sliceCanvas = document.createElement('canvas');
+          const sliceCtx = sliceCanvas.getContext('2d', { alpha: false });
+          try {
+            let offsetY = 0;
+            while (offsetY < canvas.height) {
+              const sliceH = Math.min(pagePxH, canvas.height - offsetY);
+              sliceCanvas.width = canvas.width;
+              sliceCanvas.height = sliceH;
+              sliceCtx.fillStyle = '#ffffff';
+              sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceH);
+              sliceCtx.drawImage(canvas, 0, offsetY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+              const imgData = sliceCanvas.toDataURL('image/jpeg', 0.88);
+              const renderH = (sliceH * contentWidth) / canvas.width;
+              if (pagesWritten > 0) pdf.addPage();
+              pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, renderH, undefined, 'FAST');
+              pagesWritten++;
+              offsetY += sliceH;
+            }
+          } finally {
+            releaseCanvas(sliceCanvas);
+          }
+        }
+      } finally {
+        releaseCanvas(canvas);
+        sandbox.innerHTML = '';
+      }
+    }
+
+    try {
+      for (let bi = 0; bi < blocks.length; bi++) {
+        const blk = blocks[bi];
+        sandbox.appendChild(blk);
+        if (sandbox.children.length > 1 && sandbox.scrollHeight > maxPageCssHeight) {
+          sandbox.removeChild(blk);
+          await flushSandbox();
+          if (zipDetail) {
+            zipDetail.textContent = `会話PDFを生成中… (${pagesWritten}ページ作成 / ブロック ${bi + 1}/${blocks.length})`;
+          }
+          await yieldToUi();
+          sandbox.appendChild(blk);
+        }
+        if (sandbox.scrollHeight >= maxPageCssHeight) {
+          await flushSandbox();
+          await yieldToUi();
+        }
+      }
+      if (sandbox.children.length > 0) {
+        await flushSandbox();
+      }
+      return pagesWritten > 0 ? pdf.output('arraybuffer') : null;
+    } catch (pdfErr) {
+      console.warn('generateConversationPdf warning:', pdfErr);
+      return null;
+    } finally {
+      if (sandbox.parentNode) {
+        document.body.removeChild(sandbox);
+      }
+    }
+  }
+
+  let isZipExportRunning = false;
+
+  // ---------------------------------------------------------------
+  // Gemini Notebook: PDF＋ソース一式をZIPとしてパッケージ化
+  // ---------------------------------------------------------------
+  async function downloadNotebookZip(payload) {
+    if (!payload) return;
+    if (isZipExportRunning) return;
+    if (typeof JSZip === 'undefined') {
+      alert('ZIP圧縮ライブラリの読み込みに失敗しました。');
+      return;
+    }
+
+    const zipModal = document.getElementById('zip-progress-modal');
+    const zipStatus = document.getElementById('zip-progress-status');
+    const zipDetail = document.getElementById('zip-progress-detail');
+
+    isZipExportRunning = true;
+    if (btnNotebookZip) btnNotebookZip.disabled = true;
+    if (zipModal) zipModal.style.display = 'flex';
+
+    try {
+      const active = getActiveMessages();
+      if (active.length === 0) {
+        alert('出力可能な会話がありません。すべての会話が削除されています。');
+        return;
+      }
+
+      const baseTitle = sanitizeFilename(payload.title || 'Gemini_Notebook');
+      const timeStr = formatDateForFilename(payload.exportedAt || new Date().toISOString());
+      const zip = new JSZip();
+
+      // Step 1: 会話PDFの生成 (ブロック単位の軽量ページ分割レンダリング)
+      if (zipStatus) zipStatus.textContent = '会話PDFをレンダリングしています… (1/3)';
+      if (zipDetail) zipDetail.textContent = 'ページ単位で安全にPDFを生成しています…';
+      await yieldToUi();
+
+      const pdfBuffer = await generateConversationPdf(payload, zipStatus, zipDetail);
+      if (pdfBuffer) {
+        zip.file(`${baseTitle} - 会話.pdf`, pdfBuffer, { compression: 'STORE' });
+      }
+
+      // Step 2: 閲覧・再印刷用の自立HTMLとMarkdown風テキストを追加
+      const standaloneHtml = await buildStandaloneHtml(payload);
+      zip.file(`${baseTitle} - 会話 (閲覧・再印刷用).html`, standaloneHtml);
+
+      const markdownText = buildTextDocument(payload);
+      zip.file(`${baseTitle} - 会話.txt`, '\uFEFF' + markdownText);
+
+      // Step 3: 登録ソースデータのパッケージ化
+      if (zipStatus) zipStatus.textContent = '登録ソースデータをまとめています… (2/3)';
+      if (zipDetail) zipDetail.textContent = 'ソースの本文、URLリンク、メタデータ、PDFファイルを生成中';
+
+      const sources = payload.sources || [];
+      const sourcesFolder = zip.folder('sources');
+
+      // ソース一覧インデックス (00_ソース一覧.md)
+      const indexLines = [
+        `# Gemini Notebook 登録ソース一覧`,
+        ``,
+        `- ノートブック: **${payload.title || '無題'}**`,
+        `- エクスポート日時: ${formatDate(payload.exportedAt || new Date().toISOString())}`,
+        `- 登録ソース数: ${sources.length}件`,
+        `- 会話メッセージ数: ${active.length}件`,
+        ``,
+        `---`,
+        ``,
+        `## ソース目次`,
+        ``
+      ];
+
+      sources.forEach((src, idx) => {
+        const sIndex = String(src.index || idx + 1).padStart(2, '0');
+        const sTitle = src.title || `ソース_${sIndex}`;
+
+        // 厳密な種別判定: 画像とPDFを最優先 (URLの存在によってWebと誤認されるのを完全防止)
+        const titleLower = (src.title || '').toLowerCase();
+        const urlLower = (src.url || '').toLowerCase();
+        const typeLower = (src.type || '').toLowerCase();
+
+        const isImg = (
+          typeLower === 'image' ||
+          /\.(png|jpe?g|webp|gif|bmp|svg|tiff)$/i.test(titleLower) ||
+          (src.fileType && src.fileType.startsWith('image/'))
+        );
+
+        const isPdf = !isImg && (
+          typeLower === 'pdf' ||
+          titleLower.endsWith('.pdf') ||
+          (src.fileType && src.fileType.includes('pdf')) ||
+          (urlLower.includes('drive.google.com') && !urlLower.includes('spreadsheets') && !urlLower.includes('presentation'))
+        );
+
+        const isYoutube = !isImg && !isPdf && (
+          typeLower === 'youtube' ||
+          urlLower.includes('youtube.com') ||
+          urlLower.includes('youtu.be')
+        );
+
+        const isNote = !isImg && !isPdf && !isYoutube && (
+          typeLower === 'note' ||
+          titleLower.includes('メモ') ||
+          titleLower.startsWith('新しいメモ') ||
+          titleLower.includes('note')
+        );
+
+        const isWeb = !isImg && !isPdf && !isYoutube && !isNote && (
+          typeLower === 'web' ||
+          Boolean(src.url && /^https?:\/\//i.test(src.url))
+        );
+
+        let sType = src.type || 'document';
+        if (isImg) sType = '画像 (image)';
+        else if (isPdf) sType = 'PDF (pdf)';
+        else if (isWeb) sType = 'Webサイト (web)';
+        else if (isNote) sType = 'メモ (note)';
+        else if (isYoutube) sType = 'YouTube動画 (youtube)';
+
+        indexLines.push(`### [${sIndex}] ${sTitle}`);
+        indexLines.push(`- **種別**: ${sType}`);
+        if (isImg) {
+          indexLines.push(`- **形式**: 画像ファイル（.jpg / .png等）として sources/ に保存`);
+        } else if (isPdf) {
+          indexLines.push(`- **形式**: PDFファイル（.pdf）として sources/ に保存`);
+        }
+        if (src.url) indexLines.push(`- **URL**: [${src.url}](${src.url})`);
+        const guideText = src.guide || src.summary;
+        if (guideText) indexLines.push(`- **ソースガイド/概要**: ${guideText}`);
+        if (src.citations && src.citations.length > 0) {
+          indexLines.push(`- **会話内での引用**:`);
+          src.citations.forEach((c) => indexLines.push(`  - > “${c}”`));
+        }
+        indexLines.push(``);
+      });
+
+      sourcesFolder.file('00_ソース一覧.md', '\uFEFF' + indexLines.join('\n'));
+
+      // 各ソース個別ファイル (画像なら画像ファイル+PDF、PDFならPDF、Web/YouTubeならURL+テキスト+PDF、メモならテキスト+PDF)
+      for (let i = 0; i < sources.length; i++) {
+        const src = sources[i];
+        const sIndex = String(src.index || i + 1).padStart(2, '0');
+        const guideText = src.guide || src.summary || '';
+
+        // 厳密な種別判定: 画像とPDFを最優先 (URLの存在によってWebと誤認されるのを完全防止)
+        const titleLower = (src.title || '').toLowerCase();
+        const urlLower = (src.url || '').toLowerCase();
+        const typeLower = (src.type || '').toLowerCase();
+
+        const isImage = (
+          typeLower === 'image' ||
+          /\.(png|jpe?g|webp|gif|bmp|svg|tiff)$/i.test(titleLower) ||
+          (src.fileType && src.fileType.startsWith('image/'))
+        );
+
+        const isPdf = !isImage && (
+          typeLower === 'pdf' ||
+          titleLower.endsWith('.pdf') ||
+          (src.fileType && src.fileType.includes('pdf')) ||
+          (urlLower.includes('drive.google.com') && !urlLower.includes('spreadsheets') && !urlLower.includes('presentation'))
+        );
+
+        const isYoutube = !isImage && !isPdf && (
+          typeLower === 'youtube' ||
+          urlLower.includes('youtube.com') ||
+          urlLower.includes('youtu.be')
+        );
+
+        const isNote = !isImage && !isPdf && !isYoutube && (
+          typeLower === 'note' ||
+          titleLower.includes('メモ') ||
+          titleLower.startsWith('新しいメモ') ||
+          titleLower.includes('note')
+        );
+
+        const isWeb = !isImage && !isPdf && !isYoutube && !isNote && (
+          typeLower === 'web' ||
+          Boolean(src.url && /^https?:\/\//i.test(src.url))
+        );
+
+        // 拡張子の二重化（例: 01_foo.png.png や 01_foo.pdf.pdf）を防止するためベースタイトルを抽出
+        let rawBase = src.title || (isImage ? `画像_${sIndex}` : `ソース_${sIndex}`);
+        if (isImage) {
+          rawBase = rawBase.replace(/\.(png|jpe?g|webp|gif|bmp|svg|tiff)$/i, '');
+        } else if (isPdf) {
+          rawBase = rawBase.replace(/\.pdf$/i, '');
+        }
+        const sSafeTitle = sanitizeFilename(rawBase);
+
+        if (zipStatus) zipStatus.textContent = `ソースデータを保存しています… (${i + 1}/${sources.length})`;
+        if (zipDetail) zipDetail.textContent = `「${src.title || (isImage ? '画像' : 'ソース')}」を処理中…`;
+        await yieldToUi();
+
+        if (isImage) {
+          // ==================== 画像ソースの保存 ====================
+          let dataUrl = (src.fileDataUrl && src.fileDataUrl.startsWith('data:image/')) ? src.fileDataUrl : '';
+
+          // まだBase64化されていない場合、imageUrl / fallbackImageUrl / url から高解像度バイナリを一時取得 (配列には長期保持しない)
+          const fetchTarget = src.imageUrl || src.fallbackImageUrl || (src.fileDataUrl && src.fileDataUrl.startsWith('http') ? src.fileDataUrl : '') || src.url || '';
+          const fallbackTarget = (src.fallbackImageUrl && src.fallbackImageUrl !== fetchTarget) ? src.fallbackImageUrl : '';
+
+          if (!dataUrl && fetchTarget && /^https?:\/\//i.test(fetchTarget)) {
+            if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+              try {
+                const bResp = await new Promise((res) => {
+                  let settled = false;
+                  const t = setTimeout(() => { if (!settled) { settled = true; res(null); } }, 20000);
+                  chrome.runtime.sendMessage(
+                    { type: 'AI2PDF_FETCH_IMAGE_BASE64', url: fetchTarget, fallbackUrl: fallbackTarget, maxDim: 4000, quality: 0.98 },
+                    (r) => {
+                      if (settled) return;
+                      settled = true;
+                      clearTimeout(t);
+                      res(chrome.runtime.lastError ? null : r);
+                    }
+                  );
+                });
+                if (bResp && bResp.ok && bResp.dataUrl && bResp.dataUrl.startsWith('data:image/')) {
+                  dataUrl = bResp.dataUrl;
+                }
+              } catch (_) {}
+            }
+            if (!dataUrl) {
+              for (const tryUrl of [fetchTarget, fallbackTarget].filter(Boolean)) {
+                try {
+                  const resp = await fetch(tryUrl, { credentials: 'include' });
+                  if (resp.ok) {
+                    const blob = await resp.blob();
+                    if (blob && blob.size > 0 && !(blob.type || '').includes('html')) {
+                      dataUrl = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result || '');
+                        reader.readAsDataURL(blob);
+                      });
+                      if (dataUrl && dataUrl.startsWith('data:image/')) {
+                        break;
+                      }
+                    }
+                  }
+                } catch (fetchErr) {
+                  console.warn('Could not fetch image directly:', tryUrl, fetchErr);
+                }
+              }
+            }
+          }
+
+          let ext = 'jpg';
+          if (src.title && /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(src.title)) {
+            ext = src.title.match(/\.(png|jpe?g|webp|gif|bmp|svg)$/i)[1].toLowerCase();
+            if (ext === 'jpeg') ext = 'jpg';
+          } else if (dataUrl && dataUrl.startsWith('data:image/')) {
+            const m = dataUrl.match(/^data:image\/([a-zA-Z0-9+]+);/);
+            if (m) {
+              ext = m[1].toLowerCase().replace('svg+xml', 'svg').replace('jpeg', 'jpg');
+            }
+          } else if (src.fileType) {
+            if (src.fileType.includes('jpeg') || src.fileType.includes('jpg')) ext = 'jpg';
+            else if (src.fileType.includes('png')) ext = 'png';
+            else if (src.fileType.includes('webp')) ext = 'webp';
+            else if (src.fileType.includes('gif')) ext = 'gif';
+            else if (src.fileType.includes('svg')) ext = 'svg';
+          }
+
+          const imgFileName = `${sIndex}_${sSafeTitle}.${ext}`;
+
+          // 1. 実画像バイナリを STORE (無圧縮高速格納) で sources/ に保存
+          let imgSaved = false;
+          if (dataUrl && dataUrl.includes('base64,')) {
+            try {
+              const base64Data = dataUrl.split('base64,')[1];
+              if (base64Data && base64Data.length > 20) {
+                sourcesFolder.file(imgFileName, base64ToUint8Array(base64Data), { compression: 'STORE' });
+                imgSaved = true;
+              }
+            } catch (imgSaveErr) {
+              console.warn('Failed to save image binary:', imgSaveErr);
+            }
+          } else if (dataUrl && dataUrl.startsWith('data:image/svg+xml;utf8,')) {
+            try {
+              const svgContent = decodeURIComponent(dataUrl.split('data:image/svg+xml;utf8,')[1]);
+              sourcesFolder.file(imgFileName, svgContent);
+              imgSaved = true;
+            } catch (svgErr) {
+              console.warn('Failed to save svg string:', svgErr);
+            }
+          }
+
+          // 2. OCR抽出テキストやソースガイドが実在する場合のみ説明テキストを出力
+          const hasRealText = src.text && src.text.trim().length > 0 && !src.text.includes('(本文データはノートブック内で直接参照してください)');
+          const hasGuide = guideText && guideText !== 'Gemini Notebook 登録ソース' && guideText !== '画像ソース';
+
+          if (hasRealText || hasGuide) {
+            const imgDescLines = [
+              `================================================================================`,
+              `# ${src.title || `画像 [${sIndex}]`}`,
+              `================================================================================`,
+              `種類: image (${ext})`,
+              `画像ファイル名: ${imgFileName}`,
+              `URL: ${src.url || src.imageUrl || 'なし'}`,
+              `ノートブック: ${payload.title || 'Gemini Notebook'}`,
+              `エクスポート日時: ${formatDate(payload.exportedAt || new Date().toISOString())}`,
+              ``
+            ];
+            if (hasGuide) {
+              imgDescLines.push(`【✦ ソースガイド】`);
+              imgDescLines.push(guideText);
+              imgDescLines.push(``);
+              imgDescLines.push(`--------------------------------------------------------------------------------`);
+              imgDescLines.push(``);
+            }
+            if (hasRealText) {
+              imgDescLines.push(`【OCR・抽出テキスト】`);
+              imgDescLines.push(`--------------------------------------------------------------------------------`);
+              imgDescLines.push(src.text);
+              imgDescLines.push(``);
+            }
+            sourcesFolder.file(`${sIndex}_${sSafeTitle}_説明.txt`, '\uFEFF' + imgDescLines.join('\n'));
+          }
+
+          // 3. 軽量Canvas 2D PDF を生成 (実画像または説明がある場合)
+          if (imgSaved || hasRealText || hasGuide) {
+            try {
+              const imgPdfBuf = await generateSourcePdf(src, payload.title, dataUrl);
+              if (imgPdfBuf) {
+                sourcesFolder.file(`${sIndex}_${sSafeTitle}.pdf`, imgPdfBuf, { compression: 'STORE' });
+              }
+            } catch (pdfGenErr) {
+              console.warn(`Source PDF generation warning for ${src.title}:`, pdfGenErr);
+            }
+          }
+
+          dataUrl = ''; // GC解放
+          continue; // 画像の処理完了、次のソースへ
+        }
+
+        // ==================== 文書・PDF・Web・YouTube・メモ等の保存 ====================
+        const hasRealText = Boolean(src.text && src.text.trim().length > 0);
+        const hasGuideOrCite = Boolean(
+          (guideText && guideText !== 'Gemini Notebook 登録ソース' && guideText !== 'PDFソース') ||
+          (src.citations && src.citations.length > 0)
+        );
+
+        // 1. 元ファイル(Google Drive PDF / 外部PDF URL等)が取得可能な場合は生PDFバイナリを優先取得
+        let rawSaved = false;
+        let rawDataUrl = (src.fileDataUrl && src.fileDataUrl.includes('base64,')) ? src.fileDataUrl : '';
+
+        if (!rawDataUrl && src.url && /^https?:\/\//i.test(src.url) &&
+          (isPdf || urlLower.includes('drive.google.com') || urlLower.includes('docs.google.com') || urlLower.includes('.pdf'))) {
+          if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+            try {
+              const fResp = await new Promise((res) => {
+                let settled = false;
+                const t = setTimeout(() => { if (!settled) { settled = true; res(null); } }, 20000);
+                chrome.runtime.sendMessage(
+                  { type: 'AI2PDF_FETCH_SOURCE_FILE', url: src.url },
+                  (r) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(t);
+                    res(chrome.runtime.lastError ? null : r);
+                  }
+                );
+              });
+              if (fResp && fResp.ok && fResp.dataUrl && fResp.dataUrl.includes('base64,')) {
+                const b64Check = fResp.dataUrl.split('base64,')[1] || '';
+                if (fResp.isPdf || (fResp.contentType && fResp.contentType.includes('pdf')) || b64Check.startsWith('JVBERi')) {
+                  rawDataUrl = fResp.dataUrl;
+                  src.fileType = 'application/pdf';
+                }
+              }
+            } catch (_) {}
+          }
+        }
+
+        if (rawDataUrl && rawDataUrl.includes('base64,')) {
+          try {
+            const base64Data = rawDataUrl.split('base64,')[1];
+            const isValidPdfB64 = base64Data && (base64Data.startsWith('JVBERi') || (src.fileType && src.fileType.includes('pdf')));
+            if (isValidPdfB64) {
+              sourcesFolder.file(`${sIndex}_${sSafeTitle}.pdf`, base64ToUint8Array(base64Data), { compression: 'STORE' });
+              rawSaved = true;
+            }
+          } catch (binErr) {
+            console.warn('Failed to add binary PDF source file:', binErr);
+          }
+        }
+        rawDataUrl = '';
+
+        // 2. 本文またはガイドが存在する場合、テキストファイル (.txt) を作成
+        if (hasRealText || hasGuideOrCite) {
+          const srcLines = [
+            `================================================================================`,
+            `# ${src.title || `ソース [${sIndex}]`}`,
+            `================================================================================`,
+            `種類: ${src.type || 'document'}`,
+            `URL: ${src.url || 'なし'}`,
+            `ノートブック: ${payload.title || 'Gemini Notebook'}`,
+            `エクスポート日時: ${formatDate(payload.exportedAt || new Date().toISOString())}`,
+            ``
+          ];
+
+          if (guideText && guideText !== 'Gemini Notebook 登録ソース' && guideText !== 'PDFソース') {
+            srcLines.push(`【✦ ソースガイド】`);
+            srcLines.push(guideText);
+            srcLines.push(``);
+            srcLines.push(`--------------------------------------------------------------------------------`);
+            srcLines.push(``);
+          }
+
+          if (src.citations && src.citations.length > 0) {
+            srcLines.push(`【会話内での引用箇所】`);
+            src.citations.forEach((c) => srcLines.push(`> “${c}”`));
+            srcLines.push(``);
+            srcLines.push(`--------------------------------------------------------------------------------`);
+            srcLines.push(``);
+          }
+
+          if (hasRealText) {
+            srcLines.push(`【本文・抽出テキストデータ】`);
+            srcLines.push(`--------------------------------------------------------------------------------`);
+            srcLines.push(src.text);
+            srcLines.push(``);
+          }
+
+          sourcesFolder.file(`${sIndex}_${sSafeTitle}.txt`, '\uFEFF' + srcLines.join('\n'));
+        }
+
+        // 3. Web URL / YouTube 等のショートカットファイル (.url)
+        if (src.url && /^https?:\/\//i.test(src.url)) {
+          const urlContent = `[InternetShortcut]\r\nURL=${src.url}\r\n`;
+          sourcesFolder.file(`${sIndex}_${sSafeTitle}.url`, urlContent);
+        }
+
+        // 4. 生PDFが取得できなかったローカルアップロードPDFや本文・概要のあるソースは、ページ分割PDFを生成して保存
+        if (!rawSaved && (hasRealText || hasGuideOrCite || isPdf)) {
+          try {
+            const srcPdfBuf = await generateSourcePdf(src, payload.title);
+            if (srcPdfBuf) {
+              sourcesFolder.file(`${sIndex}_${sSafeTitle}.pdf`, srcPdfBuf, { compression: 'STORE' });
+            }
+          } catch (pdfGenErr) {
+            console.warn(`Source PDF generation warning for ${src.title}:`, pdfGenErr);
+          }
+        }
+      }
+
+      // README.txt の追加
+      const readmeContent = [
+        `============================================================`,
+        ` Gemini Notebook エクスポート パッケージ`,
+        `============================================================`,
+        ``,
+        `タイトル: ${payload.title || '無題のノートブック'}`,
+        `エクスポート日時: ${formatDate(payload.exportedAt || new Date().toISOString())}`,
+        `サービス: Gemini Notebook (NotebookLM)`,
+        `URL: ${payload.url || '-'}`,
+        `会話件数: ${active.length}件`,
+        `登録ソース数: ${sources.length}件`,
+        ``,
+        `【同梱ファイル一覧】`,
+        `1. ${baseTitle} - 会話.pdf`,
+        `   -> 会話全体のPDFファイルです。数式（KaTeX/MathJax）のレイアウトを美麗に保持しています。`,
+        `2. ${baseTitle} - 会話 (閲覧・再印刷用).html`,
+        `   -> ブラウザでいつでも開いて閲覧・再印刷（Ctrl+P / ⌘P）できる自立した単一HTMLファイルです。`,
+        `3. ${baseTitle} - 会話.txt`,
+        `   -> テキストエディタやメモ帳で読めるMarkdown風テキストです。`,
+        `4. sources/ フォルダ`,
+        `   -> 登録されている全ソースデータが種類に応じて使いやすく格納されています：`,
+        `      - 画像ソース: 画像ファイル（.png / .jpg / .webp 等）＋閲覧用PDF（.pdf）※本文が空の無駄な.txtは生成されません`,
+        `      - PDFソース: 整形済み閲覧・印刷用PDF（.pdf）＋全文テキスト（.txt）`,
+        `      - Webサイト・YouTube: 直接開けるURLショートカット（.url）＋全文テキスト/文字起こし（.txt、.pdf）`,
+        `      - メモ・ノート: テキストファイル（.txt）およびPDF（.pdf）`,
+        `      - 00_ソース一覧.md: 全登録ソースの目次・URLリンク・概要ガイド`,
+        ``,
+        `Exported by AI Chat to PDF Extension`,
+        `============================================================`
+      ].join('\r\n');
+
+      zip.file('README.txt', '\uFEFF' + readmeContent);
+
+      // Step 4: 圧縮とZIPダウンロード (軽量DEFLATE level 3 + 既存圧縮ファイルはSTORE)
+      if (zipStatus) zipStatus.textContent = 'ZIPファイルを生成しています… (3/3)';
+      if (zipDetail) zipDetail.textContent = 'ZIP圧縮中… 0%';
+
+      const zipBlob = await zip.generateAsync(
+        {
+          type: 'blob',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 3 }
+        },
+        (meta) => {
+          if (zipDetail && meta && typeof meta.percent === 'number') {
+            zipDetail.textContent = `ZIP圧縮中… ${Math.round(meta.percent)}%`;
+          }
+        }
+      );
+
+      const zipFileName = `${baseTitle}_エクスポート_${timeStr}.zip`;
+      downloadBlob(zipBlob, zipFileName, 'application/zip');
+
+      showToast(`🎉 会話PDFとソース一式 (${sources.length}件) をZIP保存しました！`);
+    } catch (err) {
+      console.error('ZIP generation error:', err);
+      alert('ZIPの生成中にエラーが発生しました: ' + (err && err.message ? err.message : String(err)));
+    } finally {
+      isZipExportRunning = false;
+      if (btnNotebookZip) btnNotebookZip.disabled = false;
+      if (zipModal) zipModal.style.display = 'none';
+    }
   }
 
   // ---------------------------------------------------------------
@@ -1662,11 +2894,83 @@
   // デモ用サンプル会話データ (プレビュー確認用)
   // ---------------------------------------------------------------
   const DEMO_PAYLOAD = {
-    site: 'gemini',
-    siteName: 'Gemini',
+    site: 'gemini-notebook',
+    siteName: 'Gemini Notebook',
     title: '量子コンピュータとショアのアルゴリズムについての解説',
-    url: 'https://gemini.google.com/app',
+    url: 'https://notebooklm.google.com/notebook/quantum-study-2024',
     exportedAt: new Date().toISOString(),
+    sources: [
+      {
+        id: 'src-1',
+        index: 1,
+        title: '1学期期末テスト①.pdf',
+        type: 'pdf',
+        url: 'https://drive.google.com/file/d/1demo-physics-test-1st-term/view',
+        guide: '定期テストの物理「熱力学・力学」過去問題集です。単原子分子理想気体の状態方程式、定圧変化・等温変化の仕事、熱効率の計算問題がまとめられています。',
+        summary: '定期テストの物理「熱力学・力学」過去問題集です。単原子分子理想気体の状態方程式、定圧変化・等温変化の仕事、熱効率の計算問題がまとめられています。',
+        text: '【高校物理 1学期期末テスト①】\n大問1: 熱力学の基礎問題\n(1) 単原子分子理想気体 n [mol] の温度を T から T + ΔT に上昇させたときの内部エネルギーの変化 ΔU を求めよ。ただし気体定数を R とする。\n解答: ΔU = (3/2) n R ΔT\n\n(2) シリンダー内の気体が外部から熱量 Q を吸収し、ピストンを動かして外部へ仕事 W をした。このときの内部エネルギー変化 ΔU を表す熱力学第1法則の式を記せ。\n解答: ΔU = Q - W (または Q = ΔU + W)\n\n(3) 圧力 P, 体積 V の状態にある気体が等温変化するとき、気体のする仕事 W を P-V グラフの面積と積分を用いて導出せよ。',
+        citations: ['単原子分子理想気体の内部エネルギー変化 ΔU = (3/2)nRΔT']
+      },
+      {
+        id: 'src-2',
+        index: 2,
+        title: '【高校物理】熱力学の公式まとめ',
+        type: 'web',
+        url: 'https://study-physics.example.jp/thermodynamics-formulas',
+        guide: 'この記事は、高校物理で学習する熱力学の重要公式や法則を網羅的にまとめた解説ページです。比熱や気体の状態方程式といった基礎的な内容から、分子の運動論、内部エネルギーの変化と熱量・仕事の関係を示す熱力学第一法則に至るまで、幅広いテーマが整理されています。また、定圧変化や等温変化といった各気体変化の特徴や、熱効率に関する公式も分かりやすく提示されています。単に公式を羅列するだけでなく、導出の背景や実際の入試問題での着眼点まで解説されています。',
+        summary: 'この記事は、高校物理で学習する熱力学の重要公式や法則を網羅的にまとめた解説ページです。比熱や気体の状態方程式といった基礎的な内容から、分子の運動論、内部エネルギーの変化と熱量・仕事の関係を示す熱力学第一法則に至るまで、幅広いテーマが整理されています。',
+        text: '【高校物理】熱力学の公式まとめ\n東大塾長の山田です。\nこのページでは、高校物理の「熱力学の公式」をまとめています。\n\n1. 熱容量と比熱\nQ = C ΔT = m c ΔT\n- Q: 与えた熱量 [J]\n- C: 熱容量 [J/K]\n- m: 質量 [g] または [kg]\n- c: 比熱 [J/(g・K)]\n\n2. 理想気体の状態方程式\nP V = n R T\n- P: 圧力 [Pa]\n- V: 体積 [m³]\n- n: 物質量 [mol]\n- R: 気体定数 8.31 J/(mol・K)\n- T: 絶対温度 [K]\n\n3. 熱力学第一法則\nΔU = Q_in - W_out = Q_in + W_in\n気体が得た熱量 Q は、内部エネルギーの増加 ΔU と外部にした仕事 W に使われます。',
+        citations: ['この記事は、高校物理で学習する熱力学の重要公式や法則を網羅的にまとめた解説ページです。']
+      },
+      {
+        id: 'src-3',
+        index: 3,
+        title: '1つの動画で熱分野を完全攻略！【高校物理】',
+        type: 'youtube',
+        url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        guide: 'YouTube講義動画の文字起こしデータです。熱力学第1法則、p-Vグラフの面積が表す仕事、断熱変化のポアソンの式について図解入りで解説されています。',
+        summary: 'YouTube講義動画の文字起こしデータです。熱力学第1法則、p-Vグラフの面積が表す仕事、断熱変化のポアソンの式について図解入りで解説されています。',
+        text: '【YouTube講義 文字起こし】\n皆さんこんにちは！今日は高校物理の熱分野を1本の講義で総復習します。\nまずp-Vグラフの基本から確認しましょう。グラフで囲まれた面積が、気体が外部にした仕事 W に対応します。サイクル変化では、1周する間に気体が外部にした正味の仕事が囲まれた内部の面積になります。熱効率 e = W_net / Q_in の計算も入試頻出です！',
+        citations: ['p-Vグラフで囲まれた面積が、気体が外部にした仕事 W に対応します。']
+      },
+      {
+        id: 'src-4',
+        index: 4,
+        title: '単原子分子理想気体の内部エネルギー導出メモ',
+        type: 'note',
+        url: '',
+        guide: 'NotebookLM メモ / ノート ・ 分子運動論による圧力・平均運動エネルギー導出過程の整理メモ',
+        summary: 'NotebookLM メモ / ノート ・ 分子運動論による圧力・平均運動エネルギー導出過程の整理メモ',
+        text: '分子1個の質量 m, 速度二乗平均 v^2 とすると、1個の分子の並進運動エネルギーは (1/2)m v^2。\n立方体容器内の気体分子の衝突から求めた圧力 P = (1/3) N m v^2 / V と状態方程式 PV = nRT を連立することで、\n平均運動エネルギー (1/2)m v^2 = (3/2) k_B T を導出できる。\n全分子数 N 個の内部エネルギー U = N * (1/2)m v^2 = (3/2) n R T となる。',
+        citations: ['全分子数 N 個の内部エネルギー U = (3/2) n R T']
+      },
+      {
+        id: 'src-5',
+        index: 5,
+        title: '1000005982.jpg',
+        type: 'image',
+        fileType: 'image/jpeg',
+        fileDataUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400"><rect width="600" height="400" fill="%23e2e8f0"/><rect x="20" y="20" width="560" height="360" rx="8" fill="%23ffffff" stroke="%2394a3b8" stroke-width="2"/><text x="300" y="180" font-family="sans-serif" font-size="28" font-weight="bold" fill="%231e293b" text-anchor="middle">1000005982.jpg</text><text x="300" y="230" font-family="sans-serif" font-size="16" fill="%2364748b" text-anchor="middle">物理実験・熱気球気体膨張の様子 (撮影写真)</text></svg>',
+        url: '',
+        guide: '熱気球の気体熱膨張に関する実験写真データです。',
+        summary: '熱気球の気体熱膨張に関する実験写真データです。',
+        text: '【実験写真メモ】\nバーナー点火後の気球内空気温度の上昇に伴う体積変化を記録。シャルルの法則 V/T = 一定 の検証。',
+        citations: ['熱気球の気体熱膨張に関する実験写真データ']
+      },
+      {
+        id: 'src-6',
+        index: 6,
+        title: '熱力学P-V状態変化グラフ.svg',
+        type: 'image',
+        fileType: 'image/svg+xml',
+        fileDataUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360" viewBox="0 0 600 360"><rect width="600" height="360" fill="%23f8fafc" rx="12"/><line x1="70" y1="300" x2="540" y2="300" stroke="%23334155" stroke-width="2.5"/><line x1="70" y1="300" x2="70" y2="40" stroke="%23334155" stroke-width="2.5"/><polygon points="545,300 535,295 535,305" fill="%23334155"/><polygon points="70,35 65,45 75,45" fill="%23334155"/><text x="545" y="325" font-family="sans-serif" font-size="14" font-weight="bold" fill="%231e293b">V (体積)</text><text x="40" y="35" font-family="sans-serif" font-size="14" font-weight="bold" fill="%231e293b">P (圧力)</text><path d="M 120,90 Q 220,180 440,240" fill="none" stroke="%232563eb" stroke-width="3.5"/><circle cx="120" cy="90" r="5" fill="%232563eb"/><circle cx="440" cy="240" r="5" fill="%232563eb"/><text x="130" y="85" font-family="sans-serif" font-size="13" font-weight="bold" fill="%232563eb">状態 A (P₁, V₁)</text><text x="410" y="270" font-family="sans-serif" font-size="13" font-weight="bold" fill="%232563eb">状態 B (P₂, V₂)</text><text x="250" y="145" font-family="sans-serif" font-size="13" fill="%23475569">等温変化 PV = const</text><rect x="180" y="275" width="200" height="50" rx="6" fill="%23e0e7ff" opacity="0.8"/><text x="280" y="305" font-family="sans-serif" font-size="12" text-anchor="middle" font-weight="bold" fill="%233730a3">W = ∫ P dV (曲線下の面積)</text></svg>',
+        url: '',
+        guide: '熱力学における理想気体の等温変化（P-V曲線）および気体が外部にする仕事 W = ∫ P dV の概念図です。',
+        summary: '熱力学における理想気体の等温変化（P-V曲線）および気体が外部にする仕事 W = ∫ P dV の概念図です。',
+        text: '【図内テキスト・OCR】\nP (圧力), V (体積)\n状態 A (P₁, V₁) → 状態 B (P₂, V₂)\n等温変化 PV = const\nW = ∫ P dV (曲線下の面積)',
+        citations: ['p-Vグラフで囲まれた面積が、気体が外部にした仕事 W に対応します。']
+      }
+    ],
     messages: [
       {
         id: 'msg-0',
@@ -1676,13 +2980,13 @@
       {
         id: 'msg-1',
         role: 'assistant',
-        html: '<p>量子コンピュータは量子力学の重ね合わせと量子もつれを利用して計算を行うシステムです。</p>' +
-              '<p>特に<strong>ショアのアルゴリズム (Shor\'s Algorithm)</strong>は、整数の素因数分解を多項式時間で解くアルゴリズムであり、RSA暗号の安全性を根本から崩す可能性があります。</p>' +
+        html: '<p>量子コンピュータは量子力学の重ね合わせと量子もつれを利用して計算を行うシステムです。<sup class="citation-badge">[1]</sup></p>' +
+              '<p>特に<strong>ショアのアルゴリズム (Shor\'s Algorithm)</strong>は、整数の素因数分解を多項式時間で解くアルゴリズムであり、RSA暗号の安全性を根本から崩す可能性があります。<sup class="citation-badge">[1]</sup><sup class="citation-badge">[2]</sup></p>' +
               '<p>古典アルゴリズムでの素因数分解の計算量：</p>' +
               '<p class="katex-display">$$O\\left(\\exp\\left(\\sqrt[3]{\\frac{64}{9} n (\\log n)^2}\\right)\\right)$$</p>' +
               '<p>ショアのアルゴリズムを用いた場合の計算量：</p>' +
               '<p class="katex-display">$$O(n^2 \\log n \\log \\log n)$$</p>' +
-              '<p>このように多項式時間へ飛躍的に短縮されます。</p>'
+              '<p>このように多項式時間へ飛躍的に短縮されます。<sup class="citation-badge">[2]</sup></p>'
       },
       {
         id: 'msg-2',
@@ -1757,22 +3061,48 @@
     } catch (_) { /* noop */ }
 
     // まだBase64化されていない外部画像があれば拡張機能のバックグラウンドSWでBase64取得
+    // ※ プレビュー用ソース画像はサムネイル解像度(700px)に抑え、ZIP生成時に高解像度原画を取得してメモリ圧迫・クラッシュを防止
     const remoteImgs = [...document.images].filter((img) => img.src && !img.src.startsWith('data:'));
     if (remoteImgs.length > 0 && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      await Promise.allSettled(
-        remoteImgs.map((img) => new Promise((resolve) => {
-          chrome.runtime.sendMessage(
-            { type: 'AI2PDF_FETCH_IMAGE_BASE64', url: img.src },
-            (resp) => {
-              if (resp && resp.ok && resp.dataUrl) {
-                img.src = resp.dataUrl;
+      const CONCURRENCY = 4;
+      for (let i = 0; i < remoteImgs.length; i += CONCURRENCY) {
+        const chunk = remoteImgs.slice(i, i + CONCURRENCY);
+        await Promise.allSettled(
+          chunk.map((img) => new Promise((resolve) => {
+            let settled = false;
+            const timer = setTimeout(() => {
+              if (!settled) { settled = true; resolve(); }
+            }, 10000);
+            const fallbackUrl = img.getAttribute('data-fallback-url') || '';
+            const isSourceThumb = Boolean(img.closest && img.closest('#sources-list'));
+            chrome.runtime.sendMessage(
+              {
+                type: 'AI2PDF_FETCH_IMAGE_BASE64',
+                url: img.src,
+                fallbackUrl,
+                maxDim: isSourceThumb ? 700 : 1600,
+                quality: isSourceThumb ? 0.78 : 0.88
+              },
+              (resp) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                if (!chrome.runtime.lastError && resp && resp.ok && resp.dataUrl) {
+                  img.src = resp.dataUrl;
+                  const srcIdxAttr = img.getAttribute('data-source-idx');
+                  if (!isSourceThumb && srcIdxAttr !== null && currentPayload && currentPayload.sources) {
+                    const sIdxNum = parseInt(srcIdxAttr, 10);
+                    if (!isNaN(sIdxNum) && currentPayload.sources[sIdxNum] && !currentPayload.sources[sIdxNum].fileDataUrl) {
+                      currentPayload.sources[sIdxNum].fileDataUrl = resp.dataUrl;
+                    }
+                  }
+                }
+                resolve();
               }
-              resolve();
-            }
-          );
-          setTimeout(resolve, 4000);
-        }))
-      );
+            );
+          }))
+        );
+      }
     }
 
     const imgs = [...document.images];
@@ -1810,7 +3140,17 @@
           payload = res && res.ai2pdf_payload;
         }
       } catch (e) {
-        console.error('storage read failed', e);
+        console.error('session storage read failed', e);
+      }
+      if (!payload) {
+        try {
+          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            const resLocal = await chrome.storage.local.get('ai2pdf_payload');
+            payload = resLocal && resLocal.ai2pdf_payload;
+          }
+        } catch (e) {
+          console.error('local storage read failed', e);
+        }
       }
     }
 
@@ -1826,7 +3166,7 @@
       const demoBanner = document.createElement('div');
       demoBanner.className = 'no-print';
       demoBanner.style.cssText = 'background:#fef3c7;border:1px solid #fde68a;color:#92400e;padding:8px 16px;text-align:center;font-size:12px;font-weight:500;';
-      demoBanner.innerHTML = '💡 <strong>プレビューモード:</strong> サンプル会話を表示しています。不要な会話の削除や選択削除、元に戻す操作を試した上で、「PDFとして保存」「HTMLを保存」「テキストを保存」をお試しいただけます。';
+      demoBanner.innerHTML = '💡 <strong>プレビューモード (Gemini Notebook):</strong> サンプル会話と登録ソース（3件）を表示しています。「PDF＋ソースをZIP保存」で会話PDFと全ソースのZIP出力をお試しいただけます。';
       document.body.insertBefore(demoBanner, document.body.firstChild);
       return;
     }
@@ -1836,10 +3176,25 @@
     await waitForAssets();
     loadingEl.style.display = 'none';
 
+    // Gemini Notebook かつ ZIPモード指定の場合の案内と自動実行
+    try {
+      const q = new URLSearchParams(location.search);
+      const isZipMode = (q.get('mode') === 'pdf-zip' || payload.notebookExportMode === 'pdf-zip');
+      if (isZipMode && payload.site === 'gemini-notebook') {
+        tbHintEl.textContent = '📦 Gemini Notebook 出力: 「PDF＋ソースをZIP保存」から会話PDFと登録ソースデータを一括ダウンロードできます。';
+        showToast('💡 Gemini Notebook 出力: 会話PDFと登録ソース一式のZIP保存が準備できました');
+      }
+    } catch (_) {}
+
     // 抽出データは使い捨てにする(再読み込み時の誤表示防止)
     try {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
         await chrome.storage.session.remove('ai2pdf_payload');
+      }
+    } catch (_) { /* noop */ }
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        await chrome.storage.local.remove('ai2pdf_payload');
       }
     } catch (_) { /* noop */ }
   }
@@ -1989,6 +3344,11 @@
     }
     window.print();
   });
+  if (btnNotebookZip) {
+    btnNotebookZip.addEventListener('click', () => {
+      downloadNotebookZip(currentPayload);
+    });
+  }
   btnDlHtml.addEventListener('click', () => downloadHtml());
   if (btnCopyHtml) {
     btnCopyHtml.addEventListener('click', () => copyHtml());

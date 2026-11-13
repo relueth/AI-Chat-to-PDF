@@ -2454,44 +2454,1438 @@
   }
 
   // ---------------------------------------------------------------
-  // メッセージハンドラ
+  // Gemini Notebook (NotebookLM) 専用ソース抽出
   // ---------------------------------------------------------------
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (!msg || msg.type !== 'AI2PDF_EXTRACT') return false;
-
-    (async () => {
-      const cfg = detectSite();
-      if (!cfg) {
-        sendResponse({ ok: false, error: 'UNSUPPORTED_SITE' });
-        return;
+  function unwrapGoogleRedirectUrl(rawUrl) {
+    if (!rawUrl) return '';
+    try {
+      const u = new URL(rawUrl);
+      if ((u.hostname === 'www.google.com' || u.hostname === 'google.com') && u.pathname === '/url') {
+        const target = u.searchParams.get('q') || u.searchParams.get('url');
+        if (target && /^https?:\/\//i.test(target)) {
+          return target;
+        }
       }
+    } catch (_) {}
+    return rawUrl;
+  }
+
+  async function extractGeminiNotebookSources() {
+    const sources = [];
+    const seenTitles = new Set();
+
+    const ICON_LIGATURES_REGEX = /^(attach_file|article|spark|video_youtube|drive_pdf|description|image|photo|check_box|more_vert|keyboard_arrow_down|keyboard_arrow_right|arrow_drop_down|arrow_drop_up|expand_more|expand_less|chevron_right|chevron_left|label_auto|open_in_new|sticky_note_2|picture_as_pdf|public|language|link|collapse_content|dock_to_right|dock_to_left|arrow_back|close|note|auto_awesome|button_magic|folder|folder_open|chevron_down)+$/i;
+    const PREFIX_LIGATURE_REGEX = /^(attach_file|article|spark|video_youtube|drive_pdf|description|image|photo|check_box|more_vert|keyboard_arrow_down|keyboard_arrow_right|arrow_drop_down|expand_more|expand_less|chevron_right|label_auto|open_in_new|sticky_note_2|picture_as_pdf|public|language|link|folder|folder_open)\s*/gi;
+    const SUFFIX_LIGATURE_REGEX = /\s*(more_vert|open_in_new|keyboard_arrow_down|keyboard_arrow_right|arrow_drop_up|arrow_drop_down)$/gi;
+    const CATEGORY_NAMES_REGEX = /^(テスト・問題集|メモ|画像ファイル|熱力学・物理法則|物理と数学|すべて選択|Select all|ソースを追加|Add source|検索|Search|ウェブで新しいソース.*|ソース)$/i;
+
+    function sendSourceProgress(statusText) {
       try {
-        const messages = await collectConversation(cfg, (count) => {
-          // 進捗通知(ポップアップは閉じている可能性があるので失敗は無視)
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({ type: 'AI2PDF_PROGRESS', statusText });
+        }
+      } catch (_) {}
+    }
+
+    // Shadow DOM (notebooklm-source-plus 等) を貫通してクエリを実行
+    function querySelectorAllDeep(selector, root = document) {
+      const results = [];
+      const visited = new Set();
+      function walk(node) {
+        if (!node || visited.has(node)) return;
+        visited.add(node);
+        if (node.querySelectorAll) {
           try {
-            chrome.runtime.sendMessage({ type: 'AI2PDF_PROGRESS', count });
-          } catch (_) { /* noop */ }
+            const matched = node.querySelectorAll(selector);
+            for (const m of matched) results.push(m);
+          } catch (_) {}
+          try {
+            const all = node.querySelectorAll('*');
+            for (const el of all) {
+              if (el.shadowRoot) {
+                walk(el.shadowRoot);
+              }
+            }
+          } catch (_) {}
+        }
+      }
+      walk(root);
+      return results;
+    }
+
+    // ---------------------------------------------------------------
+    // Part A: NotebookLM 内部 batchexecute RPC による高速・精密抽出
+    // ---------------------------------------------------------------
+    async function getNotebookAuthTokens() {
+      let csrf = '';
+      let sid = '';
+      let bl = '';
+
+      const parseHtmlTokens = (txt) => {
+        if (!txt) return;
+        if (!csrf) {
+          const m = txt.match(/"SNlM0e"\s*:\s*"([^"]+)"/);
+          if (m) csrf = m[1];
+        }
+        if (!sid) {
+          const m = txt.match(/"FdrFJe"\s*:\s*"([^"]+)"/);
+          if (m) sid = m[1];
+        }
+        if (!bl) {
+          const m = txt.match(/"cfb2h"\s*:\s*"([^"]+)"/);
+          if (m) bl = m[1];
+        }
+      };
+
+      try {
+        for (const s of document.scripts) {
+          parseHtmlTokens(s.textContent);
+          if (csrf && sid && bl) break;
+        }
+      } catch (_) {}
+
+      if (!csrf) {
+        try {
+          const html = await fetch(location.href, { credentials: 'include' }).then((r) => r.text());
+          parseHtmlTokens(html);
+        } catch (_) {}
+      }
+
+      return { csrf, sid, bl };
+    }
+
+    function parseBatchExecuteResponse(rawText, rpcId) {
+      if (!rawText) return null;
+      const cleaned = rawText.replace(/^\)\]\}'\s*\n?/, '');
+      const lines = cleaned.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('[')) continue;
+        try {
+          const outer = JSON.parse(trimmed);
+          if (!Array.isArray(outer)) continue;
+          for (const item of outer) {
+            if (Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === rpcId && typeof item[2] === 'string') {
+              return JSON.parse(item[2]);
+            }
+          }
+        } catch (_) {}
+      }
+      return null;
+    }
+
+    async function callNotebookRpc(rpcId, rpcParams, tokens) {
+      if (!tokens || !tokens.csrf) return null;
+      const url = new URL(`${location.origin}/_/LabsTailwindUi/data/batchexecute`);
+      url.searchParams.set('rpcids', rpcId);
+      url.searchParams.set('source-path', location.pathname);
+      if (tokens.bl) url.searchParams.set('bl', tokens.bl);
+      if (tokens.sid) url.searchParams.set('f.sid', tokens.sid);
+      url.searchParams.set('rt', 'c');
+      url.searchParams.set('_reqid', String(Math.floor(100000 + Math.random() * 899999)));
+
+      const fReq = JSON.stringify([[[rpcId, JSON.stringify(rpcParams), null, 'generic']]]);
+      const body = new URLSearchParams({
+        'f.req': fReq,
+        at: tokens.csrf
+      });
+
+      const res = await fetch(url.toString(), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body
+      });
+      if (!res.ok) return null;
+      const txt = await res.text();
+      return parseBatchExecuteResponse(txt, rpcId);
+    }
+
+    function collectUrlsFromAny(node, outUrls = []) {
+      if (!node) return outUrls;
+      if (typeof node === 'string') {
+        if (/^https?:\/\/\S+$/i.test(node.trim())) {
+          outUrls.push(unwrapGoogleRedirectUrl(node.trim()));
+        }
+        return outUrls;
+      }
+      if (Array.isArray(node)) {
+        for (const item of node) collectUrlsFromAny(item, outUrls);
+      }
+      return outUrls;
+    }
+
+    function isUsefulExternalUrl(u) {
+      if (!u || !/^https?:\/\//i.test(u)) return false;
+      const lower = u.toLowerCase();
+      if (
+        lower.includes('notebooklm.google.com') ||
+        lower.includes('googleusercontent.com') ||
+        lower.includes('ggpht.com') ||
+        lower.includes('gstatic.com') ||
+        lower.includes('w3.org') ||
+        lower.includes('schema.org') ||
+        lower.includes('accounts.google.com')
+      ) {
+        return false;
+      }
+      return true;
+    }
+
+    function pickBestImageUrl(urls) {
+      for (const u of urls) {
+        const l = u.toLowerCase();
+        if (
+          (l.includes('googleusercontent.com') || l.includes('ggpht.com')) &&
+          !l.includes('avatar') && !l.includes('profile') && !l.includes('favicon')
+        ) {
+          const upgraded = /=([swh]\d+)/i.test(u)
+            ? u.replace(/=([swh]\d+)(-[a-z0-9_-]+)*(?=[?#]|$)/i, '=s0')
+            : u;
+          return { imageUrl: upgraded, fallbackImageUrl: u };
+        }
+      }
+      return { imageUrl: '', fallbackImageUrl: '' };
+    }
+
+    function extractTextFromHizoJc(srcData) {
+      if (!Array.isArray(srcData)) return '';
+      // srcData[0] は通常メタデータ、srcData[3] (または srcData[2]/srcData[1]) が本文ブロックツリー
+      const candidates = [
+        Array.isArray(srcData[3]) ? srcData[3] : null,
+        Array.isArray(srcData[2]) ? srcData[2] : null,
+        Array.isArray(srcData[1]) ? srcData[1] : null,
+        srcData.length > 1 ? srcData.slice(1) : null
+      ].filter(Boolean);
+
+      for (const candidate of candidates) {
+        const chunks = [];
+        const seen = new Set();
+
+        const walkBlocks = (node) => {
+          if (node === null || node === undefined) return;
+          if (typeof node === 'string') {
+            const s = node.trim();
+            if (!s) return;
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) return;
+            if (/^https?:\/\/\S+$/i.test(s)) return;
+            if (/^(image|application|text|video|audio)\/[a-z0-9.+_-]+$/i.test(s)) return;
+            if (/^(ja|en|und|zh|ko|fr|de|es)$/i.test(s)) return;
+            if (s.length > 12 && seen.has(s)) return;
+            if (s.length > 12) seen.add(s);
+            chunks.push(s);
+            return;
+          }
+          if (Array.isArray(node)) {
+            // GoogleリッチテキストASTブロック: [startOffset, endOffset, content, ...]
+            if (node.length >= 3 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+              walkBlocks(node[2]);
+              return;
+            }
+            for (const el of node) walkBlocks(el);
+          }
+        };
+
+        walkBlocks(candidate);
+        if (chunks.length > 0) {
+          return chunks.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+        }
+      }
+      return '';
+    }
+
+    function extractGuideFromTr032e(guideData) {
+      if (!Array.isArray(guideData)) return '';
+      const parts = [];
+      function walk(n) {
+        if (!n) return;
+        if (typeof n === 'string') {
+          const s = n.trim();
+          if (s && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(s) && !/^https?:\/\//i.test(s)) {
+            parts.push(s);
+          }
+        } else if (Array.isArray(n)) {
+          for (const item of n) walk(item);
+        }
+      }
+      walk(guideData);
+      if (parts.length === 0) return '';
+      const summary = parts[0];
+      const topics = parts.slice(1).filter((t) => t !== summary && t.length < 60);
+      return topics.length > 0 ? `${summary}\n\nトピック: ${topics.join(' / ')}` : summary;
+    }
+
+    async function fetchSourcesViaRpc() {
+      const nbMatch = location.pathname.match(/\/notebook\/([^/?#]+)/);
+      if (!nbMatch) return null;
+      const notebookId = nbMatch[1];
+      const tokens = await getNotebookAuthTokens();
+      if (!tokens.csrf) return null;
+
+      sendSourceProgress('NotebookLM APIからソース一覧を取得中…');
+      const nbData = await callNotebookRpc('rLM1Ne', [notebookId, null, [2], null, 0], tokens);
+      if (!Array.isArray(nbData)) return null;
+
+      // nbData[0][1] がソース配列（念のため構造探索フォールバックあり）
+      let rawSources = (Array.isArray(nbData[0]) && Array.isArray(nbData[0][1])) ? nbData[0][1] : null;
+      if (!rawSources) {
+        for (const item of nbData) {
+          if (Array.isArray(item) && item.length > 0 && Array.isArray(item[0]) && typeof item[0][1] === 'string') {
+            rawSources = item;
+            break;
+          }
+        }
+      }
+      if (!Array.isArray(rawSources) || rawSources.length === 0) return null;
+
+      const parsedList = [];
+      for (const entry of rawSources) {
+        if (!Array.isArray(entry)) continue;
+        const sourceId = Array.isArray(entry[0]) ? entry[0][0] : entry[0];
+        const title = (typeof entry[1] === 'string' && entry[1].trim()) ? entry[1].trim() : '';
+        if (!sourceId || typeof sourceId !== 'string' || !title) continue;
+
+        const allUrls = collectUrlsFromAny(entry);
+        const extUrl = allUrls.find(isUsefulExternalUrl) || (/^https?:\/\//i.test(title) ? title : '');
+        const imgPair = pickBestImageUrl(allUrls);
+
+        const titleLower = title.toLowerCase();
+        const urlLower = extUrl.toLowerCase();
+        const hasImageExt = /\.(png|jpe?g|webp|gif|bmp|svg|tiff|heic)$/i.test(titleLower) ||
+          titleLower.startsWith('image1000') ||
+          /^\d{7,}\.(jpg|png|jpeg)$/i.test(titleLower);
+        const isPdf = !hasImageExt && (
+          titleLower.endsWith('.pdf') ||
+          urlLower.includes('.pdf') ||
+          (urlLower.includes('drive.google.com') && !urlLower.includes('spreadsheets') && !urlLower.includes('presentation'))
+        );
+        const isYoutube = !hasImageExt && !isPdf && (urlLower.includes('youtube.com') || urlLower.includes('youtu.be'));
+        const isNote = !hasImageExt && !isPdf && !isYoutube && (title.includes('メモ') || titleLower.includes('note'));
+        const isWeb = !hasImageExt && !isPdf && !isYoutube && !isNote && Boolean(extUrl);
+
+        let type = 'document';
+        if (hasImageExt) type = 'image';
+        else if (isPdf) type = 'pdf';
+        else if (isYoutube) type = 'youtube';
+        else if (isWeb) type = 'web';
+        else if (isNote) type = 'note';
+
+        parsedList.push({
+          sourceId,
+          title,
+          type,
+          url: extUrl,
+          imageUrl: imgPair.imageUrl,
+          fallbackImageUrl: imgPair.fallbackImageUrl,
+          text: '',
+          guide: ''
         });
-        if (!messages.length) {
-          sendResponse({ ok: false, error: 'NO_MESSAGES' });
+      }
+
+      if (parsedList.length === 0) return null;
+
+      // 各ソースの本文 (hizoJc) とソースガイド (tr032e) を並列バッチ取得
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < parsedList.length; i += BATCH_SIZE) {
+        const batch = parsedList.slice(i, i + BATCH_SIZE);
+        sendSourceProgress(`ソース本文・メタデータを取得中 (${Math.min(i + BATCH_SIZE, parsedList.length)}/${parsedList.length})…`);
+        await Promise.all(batch.map(async (item) => {
+          try {
+            const [srcRes, guideResPrimary] = await Promise.all([
+              callNotebookRpc('hizoJc', [[item.sourceId], [2], [2]], tokens).catch(() => null),
+              callNotebookRpc('tr032e', [[[[item.sourceId]]]], tokens).catch(() => null)
+            ]);
+            let guideRes = guideResPrimary;
+            if (!guideRes) {
+              guideRes = await callNotebookRpc('tr032e', [[[item.sourceId]]], tokens).catch(() => null);
+            }
+            if (srcRes) {
+              const extraUrls = collectUrlsFromAny(srcRes);
+              if (!item.url) {
+                const foundExt = extraUrls.find(isUsefulExternalUrl);
+                if (foundExt) item.url = foundExt;
+              }
+              if (!item.imageUrl) {
+                const imgPair = pickBestImageUrl(extraUrls);
+                if (imgPair.imageUrl) {
+                  item.imageUrl = imgPair.imageUrl;
+                  item.fallbackImageUrl = imgPair.fallbackImageUrl;
+                }
+              }
+              const txt = extractTextFromHizoJc(srcRes);
+              if (txt) item.text = txt;
+            }
+            if (guideRes) {
+              const g = extractGuideFromTr032e(guideRes);
+              if (g) item.guide = g;
+            }
+          } catch (e) {
+            console.warn('[AI2PDF] RPC item warning:', item.title, e);
+          }
+        }));
+      }
+
+      // メモ (Studio Notes) も RPC (cFji9) で取得を試行
+      try {
+        const notesRes = await callNotebookRpc('cFji9', [notebookId], tokens);
+        if (Array.isArray(notesRes) && Array.isArray(notesRes[0])) {
+          for (const nEntry of notesRes[0]) {
+            if (!Array.isArray(nEntry)) continue;
+            const nMeta = Array.isArray(nEntry[1]) ? nEntry[1] : nEntry;
+            const nText = typeof nMeta[1] === 'string' ? nMeta[1].trim() : '';
+            const nTitle = typeof nMeta[4] === 'string' && nMeta[4].trim() ? nMeta[4].trim() : '保存済みメモ';
+            if (nText && !parsedList.some((p) => p.title === nTitle && p.text === nText)) {
+              parsedList.push({
+                sourceId: nEntry[0] || `note-${parsedList.length + 1}`,
+                title: nTitle,
+                type: 'note',
+                url: '',
+                imageUrl: '',
+                fallbackImageUrl: '',
+                text: nText,
+                guide: 'NotebookLM メモ / ノート'
+              });
+            }
+          }
+        }
+      } catch (_) {}
+
+      return parsedList;
+    }
+
+    // ---------------------------------------------------------------
+    // Part B: Shadow-DOM対応 サイドバー＆ビューア操作ヘルパー
+    // ---------------------------------------------------------------
+    function getVisibleSidebarCheckboxes() {
+      const cbs = querySelectorAllDeep('mat-checkbox, [role="checkbox"], input[type="checkbox"]');
+      return cbs.filter((cb) => {
+        if (cb.tagName === 'INPUT') {
+          const root = cb.getRootNode();
+          const parentCb = cb.closest ? cb.closest('mat-checkbox, [role="checkbox"]') : null;
+          if (parentCb && parentCb !== cb && root === parentCb.getRootNode()) return false;
+        }
+        const r = cb.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0 || r.left > 580) return false;
+        return true;
+      });
+    }
+
+    function getVisibleSourceContainers() {
+      const containers = querySelectorAllDeep('.single-source-container, [class*="single-source"]');
+      return containers.filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width >= 100 && r.height >= 20 && r.height <= 120 && r.left < 580;
+      });
+    }
+
+    function isSourceListVisible() {
+      return getVisibleSourceContainers().length >= 1 || getVisibleSidebarCheckboxes().length >= 2;
+    }
+
+    function findSidebarScroller() {
+      const candidates = querySelectorAllDeep(
+        'cdk-virtual-scroll-viewport, [class*="sources-list"], [class*="source-list"], [class*="source-panel"], [class*="sources-panel"], mat-selection-list, aside, nav, div'
+      );
+      let best = null;
+      let bestArea = Infinity;
+      for (const sc of candidates) {
+        const r = sc.getBoundingClientRect();
+        if (r.width < 130 || r.width > 580 || r.height < 120 || r.left > 480) continue;
+        if (sc.scrollHeight <= sc.clientHeight + 20) continue;
+        const style = window.getComputedStyle(sc);
+        const oy = (style && style.overflowY) || '';
+        const isScrollable = sc.tagName === 'CDK-VIRTUAL-SCROLL-VIEWPORT' || oy === 'auto' || oy === 'scroll' || oy === 'overlay';
+        if (!isScrollable) continue;
+        const hasItems = querySelectorAllDeep('.single-source-container, mat-checkbox, [role="checkbox"], input[type="checkbox"]', sc).length > 0;
+        if (!hasItems) continue;
+        const area = r.width * r.height;
+        if (area < bestArea) {
+          bestArea = area;
+          best = sc;
+        }
+      }
+      return best;
+    }
+
+    function findOpenSourceViewer() {
+      const viewerCandidates = querySelectorAllDeep(
+        '[class*="source-viewer"], [class*="source-view"], [class*="source-detail"], [class*="document-viewer"], [role="dialog"], [class*="viewer-container"], labs-source-view, section[class*="source"]'
+      );
+      for (const vc of viewerCandidates) {
+        const r = vc.getBoundingClientRect();
+        const txt = vc.textContent || '';
+        if (r.width >= 200 && r.height >= 150 && !txt.includes('ソースを追加') && !txt.includes('Add source')) {
+          return vc;
+        }
+      }
+      return null;
+    }
+
+    async function returnToSourceList() {
+      if (isSourceListVisible() && !findOpenSourceViewer()) return true;
+
+      const btns = querySelectorAllDeep('button, [role="button"]').filter((b) => {
+        const r = b.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && r.left < 620 && r.top < 220;
+      });
+
+      const priorityMatchers = [
+        (b, txt, lbl) => /戻る|ソース一覧|ソースを閉じる|back|close source/i.test(lbl) || txt === 'arrow_back' || txt === 'close',
+        (b, txt, lbl) => txt === 'collapse_content' || txt === 'chevron_left' || /collapse|閉じる/i.test(lbl)
+      ];
+
+      for (const matchFn of priorityMatchers) {
+        for (const b of btns) {
+          const txt = (b.textContent || '').trim().toLowerCase();
+          const lbl = (b.getAttribute('aria-label') || b.getAttribute('title') || '').trim();
+          if (txt === 'dock_to_right' || /sidebar|パネルを折りたた/i.test(lbl)) continue;
+          if (matchFn(b, txt, lbl)) {
+            try { b.click(); } catch (_) {}
+            const t0 = Date.now();
+            while (Date.now() - t0 < 550) {
+              await new Promise((r) => setTimeout(r, 60));
+              if (isSourceListVisible() && !findOpenSourceViewer()) return true;
+            }
+          }
+        }
+      }
+
+      if (!isSourceListVisible()) {
+        const expandBtns = querySelectorAllDeep('button, [role="button"]').filter((b) => {
+          const r = b.getBoundingClientRect();
+          const t = (b.textContent || '').trim().toLowerCase();
+          const l = (b.getAttribute('aria-label') || '').toLowerCase();
+          return r.width > 0 && r.left < 200 && (t === 'dock_to_left' || t === 'chevron_right' || l.includes('ソース') || l.includes('source'));
+        });
+        for (const eb of expandBtns) {
+          try { eb.click(); } catch (_) {}
+          await new Promise((r) => setTimeout(r, 180));
+          if (isSourceListVisible()) return true;
+        }
+      }
+
+      return isSourceListVisible();
+    }
+
+    function findSingleRowFromCheckbox(cb, scroller) {
+      if (cb.closest) {
+        const container = cb.closest('.single-source-container');
+        if (container) return container;
+      }
+      let cur = cb;
+      let bestRow = null;
+      for (let depth = 0; depth < 7 && cur && cur !== document.body && cur !== scroller; depth++) {
+        const parent = cur.parentElement;
+        if (!parent || parent === document.body || parent === scroller) break;
+        const pRect = parent.getBoundingClientRect();
+        const innerCheckboxes = Array.from(parent.querySelectorAll('mat-checkbox, [role="checkbox"], input[type="checkbox"]')).filter((x) => {
+          if (x.tagName === 'INPUT') {
+            const p = x.closest('mat-checkbox, [role="checkbox"]');
+            if (p && p !== x) return false;
+          }
+          return true;
+        });
+        if (innerCheckboxes.length > 1) break;
+        if (pRect.height > 110) break;
+        if (pRect.height >= 22 && pRect.width >= 100) {
+          bestRow = parent;
+        }
+        cur = parent;
+      }
+      return bestRow;
+    }
+
+    function isCategoryOrControlRow(row) {
+      if (!row) return true;
+      if (row.classList && row.classList.contains('single-source-container')) return false;
+      const rawTxt = (row.innerText || row.textContent || '').trim();
+      if (!rawTxt) return true;
+      if (/^(すべて選択|Select all|ソースを追加|Add source)/i.test(rawTxt)) return true;
+
+      if (row.hasAttribute('aria-expanded') || row.querySelector('[aria-expanded]')) {
+        return true;
+      }
+
+      const icons = row.querySelectorAll('mat-icon, [class*="material-symbols"], [class*="google-symbols"]');
+      for (const ic of icons) {
+        const t = (ic.textContent || '').trim().toLowerCase();
+        if (
+          t === 'keyboard_arrow_down' || t === 'keyboard_arrow_right' ||
+          t === 'arrow_drop_down' || t === 'expand_more' ||
+          t === 'expand_less' || t === 'chevron_right' || t === 'chevron_down' ||
+          t === 'folder' || t === 'folder_open'
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function extractCleanRowTitle(row) {
+      if (!row) return '';
+      // 1. 専用タイトル要素があれば最優先で取得
+      const directTitleEl = row.querySelector('.source-title, .source-title-column, [class*="source-title"]');
+      if (directTitleEl) {
+        const tip = (directTitleEl.getAttribute('title') || directTitleEl.getAttribute('mattooltip') || '').trim();
+        const raw = (directTitleEl.textContent || '').trim().replace(/\s+/g, ' ');
+        const picked = (tip && tip.length >= raw.length) ? tip : raw;
+        const cleanPicked = picked.replace(PREFIX_LIGATURE_REGEX, '').replace(SUFFIX_LIGATURE_REGEX, '').trim();
+        if (cleanPicked && cleanPicked.length >= 2 && !ICON_LIGATURES_REGEX.test(cleanPicked) && !CATEGORY_NAMES_REGEX.test(cleanPicked)) {
+          return cleanPicked;
+        }
+      }
+
+      // 2. tooltip 属性候補
+      let fullTooltip = '';
+      const tipEls = row.querySelectorAll('[title], [mattooltip]');
+      for (const te of tipEls) {
+        if (te.closest('mat-checkbox, [role="checkbox"], button')) continue;
+        const val = (te.getAttribute('title') || te.getAttribute('mattooltip') || '').trim();
+        if (val && val.length >= 2 && !ICON_LIGATURES_REGEX.test(val) && !/もっと見る|more|選択|check/i.test(val)) {
+          fullTooltip = val;
+          break;
+        }
+      }
+
+      // 3. クローンから厳密にアイコン・ボタンのみ除去（※ [class*="icon"] のような広すぎるセレクタは使わない）
+      const clone = row.cloneNode(true);
+      clone.querySelectorAll(
+        'mat-checkbox, [role="checkbox"], input, mat-icon, svg, .google-symbols, .material-symbols-outlined, .material-icons, .mdc-checkbox, button[aria-haspopup], button[aria-label*="more" i], button[aria-label*="menu" i], button[aria-label*="その他"], button[aria-label*="オプション"]'
+      ).forEach((n) => n.remove());
+
+      const text = (clone.innerText || clone.textContent || '').replace(/\r/g, '\n');
+      const lines = text.split('\n').map((l) => l.trim()).filter((l) => l && !ICON_LIGATURES_REGEX.test(l));
+      let title = lines[0] || '';
+      title = title.replace(/\s+/g, ' ').trim();
+      title = title.replace(PREFIX_LIGATURE_REGEX, '').replace(SUFFIX_LIGATURE_REGEX, '').trim();
+
+      if (fullTooltip && (!title || title.endsWith('...') || title.endsWith('…') || fullTooltip.length > title.length)) {
+        title = fullTooltip;
+      }
+
+      if (!title || title.length < 2 || title.length > 220) return '';
+      if (ICON_LIGATURES_REGEX.test(title) || CATEGORY_NAMES_REGEX.test(title)) return '';
+      return title;
+    }
+
+    async function extractActiveSourceView(expectedTitle = '') {
+      let guideCard = null;
+      let guideText = '';
+      const guideHeaders = querySelectorAllDeep('h1, h2, h3, h4, span, div').filter((el) => {
+        if (el.children && el.children.length > 3) return false;
+        const t = (el.textContent || '').trim();
+        return t === 'ソースガイド' || t.toLowerCase() === 'source guide';
+      });
+
+      for (const gh of guideHeaders) {
+        const card = gh.closest ? gh.closest('[class*="card"], [class*="guide"], [class*="source-guide"], div') : null;
+        if (card && card.textContent.length > 20) {
+          guideCard = card;
+          const cardClone = card.cloneNode(true);
+          cardClone.querySelectorAll('h1, h2, h3, h4, button, [class*="header"], mat-icon, .google-symbols').forEach((h) => h.remove());
+          guideText = (cardClone.innerText || cardClone.textContent || '')
+            .replace(/^(\s*✦|\s*◆|\s*▼|\s*▲|\s*button_magic|\s*arrow_drop_up|\s*ソースガイド|\s*Source guide)+/gi, '')
+            .trim();
+          if (guideText) break;
+        }
+      }
+
+      let viewerEl = findOpenSourceViewer();
+
+      if (!viewerEl && !isSourceListVisible()) {
+        const allHeaders = querySelectorAllDeep('h1, h2, h3, h4, span, div');
+        for (const h of allHeaders) {
+          const t = (h.textContent || '').trim();
+          if (t === 'ソース' || t === 'Sources') {
+            const hr = h.getBoundingClientRect();
+            if (hr.width > 0 && hr.top < 160 && hr.left < 600) {
+              let panel = h.parentElement;
+              while (panel && panel !== document.body) {
+                const pr = panel.getBoundingClientRect();
+                const pTxt = panel.textContent || '';
+                if (pr.width >= 200 && pr.height >= 200 && pr.width <= 900 && !pTxt.includes('Studio') && !pTxt.includes('チャット')) {
+                  viewerEl = panel;
+                  if (pr.height >= 350) break;
+                }
+                panel = panel.parentElement;
+              }
+              if (viewerEl) break;
+            }
+          }
+        }
+      }
+
+      if (!viewerEl && guideCard) {
+        let p = guideCard.parentElement;
+        while (p && p !== document.body) {
+          const pr = p.getBoundingClientRect();
+          const pTxt = p.textContent || '';
+          if (pr.width >= 200 && pr.width <= 900 && !pTxt.includes('ソースを追加') && !pTxt.includes('Add source')) {
+            viewerEl = p;
+            if (pr.height >= 350) break;
+          }
+          p = p.parentElement;
+        }
+      }
+
+      if (!viewerEl && expectedTitle) {
+        const leftImgs = querySelectorAllDeep('img').filter((img) => {
+          const r = img.getBoundingClientRect();
+          const s = img.currentSrc || img.src || '';
+          const ls = s.toLowerCase();
+          return r.width >= 80 && r.height >= 80 && r.left < window.innerWidth * 0.7 &&
+            !ls.includes('avatar') && !ls.includes('profile') && !ls.includes('logo') && !ls.includes('gstatic.com');
+        });
+        if (leftImgs.length > 0) {
+          let p = leftImgs[0].parentElement;
+          while (p && p !== document.body) {
+            const pr = p.getBoundingClientRect();
+            if (pr.width >= 200 && pr.width <= 900 && pr.height >= 200) {
+              viewerEl = p;
+              if (pr.height >= 350) break;
+            }
+            p = p.parentElement;
+          }
+        }
+      }
+
+      if (!viewerEl) return null;
+
+      let title = '';
+      const titleSelectors = [
+        '[class*="source-view"] [class*="title"]',
+        '[class*="source-detail"] [class*="title"]',
+        '[class*="viewer-header"] [class*="title"]',
+        '[class*="doc-title"]',
+        '[class*="source-title"]',
+        'h1',
+        'h2',
+        'h3'
+      ];
+      for (const sel of titleSelectors) {
+        const tEls = querySelectorAllDeep(sel, viewerEl);
+        for (const tEl of tEls) {
+          if (guideCard && guideCard.contains(tEl)) continue;
+          const t = (tEl.getAttribute('title') || tEl.textContent || '').trim()
+            .replace(PREFIX_LIGATURE_REGEX, '').replace(SUFFIX_LIGATURE_REGEX, '').trim();
+          if (t && t !== 'ソース' && t !== 'Sources' && !t.includes('ソースガイド') && !t.includes('ソースを追加') && t.length < 180) {
+            title = t;
+            break;
+          }
+        }
+        if (title) break;
+      }
+      if (!title && expectedTitle) title = expectedTitle;
+
+      let url = '';
+      const externalLinkSelectors = [
+        'a[target="_blank"][href^="http"]',
+        'a[href^="http"]:not([href*="accounts.google.com"]):not([href*="notebooklm.google.com"])',
+        '[data-url]',
+        '[data-source-url]',
+        '[data-href]',
+        '[ng-reflect-href]'
+      ];
+      for (const elSel of externalLinkSelectors) {
+        const linkEls = querySelectorAllDeep(elSel, viewerEl);
+        for (const linkEl of linkEls) {
+          const rawHref = (linkEl.tagName === 'A' ? linkEl.href : '') ||
+            linkEl.getAttribute('data-url') ||
+            linkEl.getAttribute('data-source-url') ||
+            linkEl.getAttribute('data-href') ||
+            linkEl.getAttribute('ng-reflect-href') ||
+            linkEl.getAttribute('href') || '';
+          if (rawHref && /^https?:\/\//i.test(rawHref)) {
+            url = unwrapGoogleRedirectUrl(rawHref);
+            break;
+          }
+        }
+        if (url) break;
+      }
+      if (!url && /^https?:\/\//i.test(title)) {
+        url = title;
+      }
+
+      let bodyText = '';
+      const bodySelectors = [
+        '[class*="document-content"]',
+        '[class*="document-body"]',
+        '[class*="article-content"]',
+        '[class*="viewer-content"]',
+        '[class*="viewer-body"]',
+        '[class*="markdown-content"]',
+        '[class*="text-content"]'
+      ];
+      let bodyEl = null;
+      for (const sel of bodySelectors) {
+        const found = querySelectorAllDeep(sel, viewerEl).find((el) => el !== guideCard && !(el.closest && el.closest('[class*="guide"]')));
+        if (found) {
+          bodyEl = found;
+          break;
+        }
+      }
+
+      if (bodyEl) {
+        const bClone = bodyEl.cloneNode(true);
+        bClone.querySelectorAll('button, mat-icon, .google-symbols, .material-symbols-outlined, [class*="guide"]').forEach((n) => n.remove());
+        bodyText = (bClone.innerText || bClone.textContent || '').trim();
+      } else {
+        const clone = viewerEl.cloneNode(true);
+        clone.querySelectorAll('button, [class*="header"], [class*="toolbar"], [class*="guide"], [class*="nav"], img, mat-icon, .google-symbols, .material-symbols-outlined, [class*="material-symbols"]').forEach((n) => n.remove());
+        bodyText = (clone.innerText || clone.textContent || '').trim();
+        if (title && bodyText.startsWith(title)) {
+          bodyText = bodyText.slice(title.length).trim();
+        }
+      }
+
+      if ((bodyText.includes('drive_pdf') && bodyText.includes('video_youtube')) || (bodyText.includes('1000005982.jpg') && bodyText.includes('新しいメモ'))) {
+        bodyText = '';
+      }
+
+      let type = 'document';
+      const checkStr = (title + ' ' + url).toLowerCase();
+      const hasImageExt = /\.(png|jpe?g|webp|gif|bmp|svg|tiff|heic)$/i.test(title) || title.toLowerCase().startsWith('image1000');
+      const isPdf = title.toLowerCase().endsWith('.pdf') || checkStr.includes('.pdf?') || url.toLowerCase().includes('.pdf') || url.toLowerCase().includes('drive.google.com/file');
+      const isYoutube = checkStr.includes('youtube.com') || checkStr.includes('youtu.be');
+      const isNote = !hasImageExt && !isPdf && (title.includes('メモ') || title.toLowerCase().includes('note'));
+      const isWeb = Boolean(!hasImageExt && !isPdf && !isYoutube && url && /^https?:\/\//i.test(url));
+
+      if (hasImageExt) type = 'image';
+      else if (isPdf) type = 'pdf';
+      else if (isYoutube) type = 'youtube';
+      else if (isWeb) type = 'web';
+      else if (isNote) type = 'note';
+
+      let imageUrl = '';
+      let fallbackImageUrl = '';
+      let fileDataUrl = '';
+      let fileType = '';
+
+      function isCandidateContentImg(img, restrictToSourceArea = false) {
+        const r = img.getBoundingClientRect();
+        const s = img.currentSrc || img.src || img.getAttribute('src') || '';
+        const lowerS = s.toLowerCase();
+        if (!s) return false;
+        if (
+          lowerS.includes('avatar') || lowerS.includes('profile') ||
+          lowerS.includes('logo') || lowerS.includes('favicon') ||
+          lowerS.includes('gstatic.com/images/icons') || lowerS.includes('fonts.gstatic.com') ||
+          lowerS.includes('gstatic.com')
+        ) {
+          return false;
+        }
+        if (r.width > 0 && r.height > 0 && r.width < 44 && r.height < 44) return false;
+        if (restrictToSourceArea) {
+          if (r.width === 0 || r.height === 0) return false;
+          if (r.left >= window.innerWidth * 0.75) return false;
+          if (img.closest && img.closest('[class*="chat"], [class*="message"], [class*="conversation"]')) return false;
+        }
+        return true;
+      }
+
+      function pickLargestContentImg(list) {
+        let best = null;
+        let bestArea = -1;
+        for (const img of list) {
+          const r = img.getBoundingClientRect();
+          const w = img.naturalWidth || img.width || r.width || 0;
+          const h = img.naturalHeight || img.height || r.height || 0;
+          const area = w * h;
+          const src = img.currentSrc || img.src || img.getAttribute('src') || '';
+          const looksLikeContentImg = (w >= 60 && h >= 60) || src.includes('googleusercontent.com') || src.startsWith('blob:') || src.startsWith('data:image/');
+          if (looksLikeContentImg && area >= bestArea) {
+            bestArea = area;
+            best = img;
+          }
+        }
+        return best;
+      }
+
+      const viewerImgs = querySelectorAllDeep('img', viewerEl).filter((img) => isCandidateContentImg(img, false));
+      let mainImg = pickLargestContentImg(viewerImgs);
+
+      if (!mainImg && type === 'image') {
+        const pageImgs = querySelectorAllDeep('img').filter((img) => isCandidateContentImg(img, true));
+        mainImg = pickLargestContentImg(pageImgs);
+      }
+
+      if (mainImg) {
+        const rawSrc = mainImg.currentSrc || mainImg.src || mainImg.getAttribute('src') || '';
+        if (rawSrc.startsWith('data:image/')) {
+          fileDataUrl = rawSrc;
+          const match = rawSrc.match(/^data:([^;]+);/);
+          if (match) fileType = match[1];
+        } else if (rawSrc.startsWith('blob:')) {
+          try {
+            const bResp = await fetch(rawSrc);
+            const blob = await bResp.blob();
+            fileType = blob.type || 'image/jpeg';
+            fileDataUrl = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+          } catch (_) {}
+          if (!fileDataUrl && (mainImg.naturalWidth > 0 || mainImg.width > 0)) {
+            try {
+              const cv = document.createElement('canvas');
+              cv.width = mainImg.naturalWidth || mainImg.width;
+              cv.height = mainImg.naturalHeight || mainImg.height;
+              cv.getContext('2d').drawImage(mainImg, 0, 0);
+              fileDataUrl = cv.toDataURL('image/jpeg', 0.96);
+              fileType = 'image/jpeg';
+            } catch (_) {}
+          }
+        } else if (/^https?:\/\//i.test(rawSrc)) {
+          fallbackImageUrl = rawSrc;
+          if (rawSrc.includes('googleusercontent.com') && /=([swh]\d+)/i.test(rawSrc)) {
+            imageUrl = rawSrc.replace(/=([swh]\d+)(-[a-z0-9_-]+)*(?=[?#]|$)/i, '=s0');
+          } else {
+            imageUrl = rawSrc;
+          }
+        }
+      } else if (type === 'image') {
+        const canvases = querySelectorAllDeep('canvas', viewerEl).filter((c) => c.width >= 100 && c.height >= 100);
+        if (canvases.length > 0) {
+          try {
+            const cData = canvases[0].toDataURL('image/jpeg', 0.96);
+            if (cData && cData.length > 200) {
+              fileDataUrl = cData;
+              fileType = 'image/jpeg';
+            }
+          } catch (_) {}
+        }
+      }
+
+      return {
+        title: title || '無題のソース',
+        type,
+        url,
+        imageUrl,
+        fallbackImageUrl,
+        fileDataUrl,
+        fileType: fileType || (type === 'image' ? 'image/jpeg' : (type === 'pdf' ? 'application/pdf' : '')),
+        guide: guideText,
+        summary: guideText || (type === 'image' ? '画像ソース' : 'Gemini Notebook 登録ソース'),
+        text: bodyText
+      };
+    }
+
+    async function expandCollapsedFolders() {
+      try {
+        const collapsedHeaders = querySelectorAllDeep(
+          'mat-expansion-panel-header[aria-expanded="false"], [aria-expanded="false"], [class*="accordion"][aria-expanded="false"], [class*="folder"][aria-expanded="false"]'
+        );
+        for (const ch of collapsedHeaders) {
+          const r = ch.getBoundingClientRect();
+          if (r.width <= 0 || r.left > 540) continue;
+          const txt = (ch.textContent || '').trim();
+          if (!/すべて選択|Select all/i.test(txt)) {
+            try { ch.click(); } catch (_) {}
+          }
+        }
+        const rightArrows = querySelectorAllDeep('mat-icon, [class*="material-symbols"], .google-symbols');
+        for (const arrow of rightArrows) {
+          const r = arrow.getBoundingClientRect();
+          if (r.width <= 0 || r.left > 540) continue;
+          const t = (arrow.textContent || '').trim().toLowerCase();
+          if (t === 'keyboard_arrow_right' || t === 'chevron_right') {
+            const btn = arrow.closest ? arrow.closest('button, [role="button"], mat-expansion-panel-header, [class*="folder"], div') : null;
+            if (btn && btn.getAttribute('aria-expanded') !== 'true') {
+              try { btn.click(); } catch (_) {}
+            }
+          }
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      } catch (_) {}
+    }
+
+    function getAllVisibleRowElements(scroller) {
+      const containerRows = getVisibleSourceContainers();
+      if (containerRows.length > 0) return containerRows;
+
+      const cbs = getVisibleSidebarCheckboxes();
+      const rows = [];
+      const seen = new Set();
+      for (const cb of cbs) {
+        const row = findSingleRowFromCheckbox(cb, scroller);
+        if (!row || seen.has(row) || isCategoryOrControlRow(row)) continue;
+        seen.add(row);
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    function titlesMatch(rowTitle, targetTitle) {
+      if (!rowTitle || !targetTitle) return false;
+      if (rowTitle === targetTitle) return true;
+      const cleanRow = rowTitle.replace(/(?:\.\.\.|…)+$/g, '').trim();
+      const cleanTarget = targetTitle.replace(/(?:\.\.\.|…)+$/g, '').trim();
+      if (cleanRow.length >= 4 && cleanTarget.startsWith(cleanRow)) return true;
+      if (cleanTarget.length >= 4 && cleanRow.startsWith(cleanTarget)) return true;
+      return false;
+    }
+
+    function findVisibleRowForItem(item, scroller) {
+      const rows = getAllVisibleRowElements(scroller);
+      const matches = [];
+      for (const row of rows) {
+        const t = extractCleanRowTitle(row);
+        if (titlesMatch(t, item.title)) {
+          matches.push(row);
+        }
+      }
+      if (matches.length === 1) return matches[0];
+      if (matches.length > 1) {
+        return matches[Math.min(item.occurrenceIdx || 0, matches.length - 1)];
+      }
+      return null;
+    }
+
+    async function openSourceRow(item) {
+      await returnToSourceList();
+
+      const scroller = findSidebarScroller();
+      let row = (item.el && item.el.isConnected && item.el.getBoundingClientRect().height > 0) ? item.el : null;
+
+      if (!row) {
+        row = findVisibleRowForItem(item, scroller);
+      }
+
+      if (!row && scroller && scroller.scrollHeight > scroller.clientHeight + 10) {
+        scroller.scrollTop = item.approxScrollTop || 0;
+        await new Promise((r) => setTimeout(r, 120));
+        row = findVisibleRowForItem(item, scroller);
+
+        if (!row) {
+          const maxScroll = scroller.scrollHeight;
+          const step = Math.max(100, Math.floor(scroller.clientHeight * 0.55));
+          for (let pos = 0; pos <= maxScroll + step; pos += step) {
+            scroller.scrollTop = Math.min(pos, maxScroll);
+            await new Promise((r) => setTimeout(r, 90));
+            row = findVisibleRowForItem(item, scroller);
+            if (row) break;
+          }
+        }
+      }
+
+      // Shadow DOM (notebooklm-source-plus) が非表示にしているネイティブ行フォールバック
+      if (!row) {
+        const hiddenNative = querySelectorAllDeep('.single-source-container');
+        for (const nr of hiddenNative) {
+          const nt = extractCleanRowTitle(nr);
+          if (titlesMatch(nt, item.title)) {
+            row = nr;
+            break;
+          }
+        }
+      }
+
+      if (!row) return false;
+      item.el = row;
+
+      try {
+        if (row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+      } catch (_) {}
+
+      let clickTarget = row.querySelector('.source-title, .source-title-column, [class*="source-title"]');
+      if (!clickTarget) {
+        const textCandidates = row.querySelectorAll('[class*="title"], [class*="name"], span, div');
+        for (const cand of textCandidates) {
+          if (cand.closest('mat-checkbox, [role="checkbox"], button[aria-haspopup], button[aria-label*="more" i], button[aria-label*="その他"]')) continue;
+          if (cand.classList && (cand.classList.contains('google-symbols') || cand.classList.contains('material-symbols-outlined'))) continue;
+          const ct = (cand.textContent || '').trim();
+          if (ct && !ICON_LIGATURES_REGEX.test(ct) && ct.length >= 2) {
+            clickTarget = cand;
+            break;
+          }
+        }
+      }
+      if (!clickTarget) clickTarget = row;
+
+      const opts = { bubbles: true, cancelable: true, composed: true, view: window };
+      clickTarget.dispatchEvent(new PointerEvent('pointerdown', opts));
+      clickTarget.dispatchEvent(new MouseEvent('mousedown', opts));
+      clickTarget.dispatchEvent(new PointerEvent('pointerup', opts));
+      clickTarget.dispatchEvent(new MouseEvent('mouseup', opts));
+      clickTarget.click();
+      return true;
+    }
+
+    async function getNotebookSidebarItems() {
+      await returnToSourceList();
+      await expandCollapsedFolders();
+
+      const scroller = findSidebarScroller();
+      const scrollerRect = scroller ? scroller.getBoundingClientRect() : { top: 0 };
+      const discoveredList = [];
+
+      function harvestVisibleRows() {
+        const scrollTop = scroller ? scroller.scrollTop : 0;
+        const rows = getAllVisibleRowElements(scroller);
+
+        for (const row of rows) {
+          const title = extractCleanRowTitle(row);
+          if (!title) continue;
+
+          const rRect = row.getBoundingClientRect();
+          const approxTop = Math.round((rRect.top - scrollerRect.top + scrollTop) / 14);
+          const matchedExisting = discoveredList.find((it) => it.title === title && Math.abs(it.approxBucket - approxTop) <= 2);
+          if (matchedExisting) {
+            matchedExisting.el = row;
+            continue;
+          }
+
+          const iconEl = row.querySelector('mat-icon, [class*="material-symbols"], .google-symbols, svg');
+          const iconText = (iconEl ? (iconEl.textContent || iconEl.getAttribute('aria-label') || '').trim() : '').toLowerCase();
+
+          let type = 'document';
+          const lowerTitle = title.toLowerCase();
+          const hasImageExt = /\.(png|jpe?g|webp|gif|bmp|svg|tiff|heic)$/i.test(lowerTitle) || lowerTitle.startsWith('image1000') || /^\d{7,}\.(jpg|png|jpeg)$/i.test(lowerTitle);
+          const isPdf = lowerTitle.endsWith('.pdf') || iconText.includes('drive_pdf') || iconText.includes('picture_as_pdf');
+          const isNote = !hasImageExt && !isPdf && (lowerTitle.includes('メモ') || lowerTitle.includes('note') || iconText.includes('sticky_note') || iconText.includes('note'));
+          const isYoutube = !hasImageExt && !isPdf && (iconText.includes('youtube') || lowerTitle.includes('youtube'));
+          const isWeb = !hasImageExt && !isPdf && !isNote && !isYoutube && (iconText.includes('link') || iconText.includes('open_in_new') || iconText.includes('public') || iconText.includes('language') || /^https?:\/\//i.test(title) || lowerTitle.includes('wikipedia'));
+
+          if (hasImageExt || iconText === 'image' || iconText === 'photo') type = 'image';
+          else if (isPdf) type = 'pdf';
+          else if (isYoutube) type = 'youtube';
+          else if (isNote) type = 'note';
+          else if (isWeb) type = 'web';
+
+          let directUrl = /^https?:\/\//i.test(title) ? title : '';
+          const aEl = row.querySelector('a[href^="http"]');
+          if (aEl && aEl.href && !aEl.href.includes('notebooklm.google.com')) {
+            directUrl = unwrapGoogleRedirectUrl(aEl.href);
+            if (type === 'document') type = 'web';
+          }
+
+          const occurrenceIdx = discoveredList.filter((it) => it.title === title).length;
+          discoveredList.push({
+            el: row,
+            title,
+            occurrenceIdx,
+            approxBucket: approxTop,
+            approxScrollTop: Math.max(0, Math.round(rRect.top - scrollerRect.top + scrollTop - 60)),
+            type,
+            directUrl
+          });
+        }
+      }
+
+      harvestVisibleRows();
+
+      if (scroller && scroller.scrollHeight > scroller.clientHeight + 20) {
+        const originalScroll = scroller.scrollTop;
+        scroller.scrollTop = 0;
+        await new Promise((r) => setTimeout(r, 150));
+        harvestVisibleRows();
+
+        const maxScroll = scroller.scrollHeight;
+        const step = Math.max(100, Math.floor(scroller.clientHeight * 0.55));
+        for (let pos = step; pos <= maxScroll + step; pos += step) {
+          scroller.scrollTop = Math.min(pos, maxScroll);
+          await new Promise((r) => setTimeout(r, 140));
+          harvestVisibleRows();
+        }
+        scroller.scrollTop = originalScroll;
+        await new Promise((r) => setTimeout(r, 120));
+      }
+
+      return discoveredList;
+    }
+
+    // ---------------------------------------------------------------
+    // メイン抽出処理: RPC優先 -> 未取得画像のビューア補完 -> UI全体フォールバック
+    // ---------------------------------------------------------------
+    const preventAllNavigation = (e) => {
+      const a = e.target && e.target.closest ? e.target.closest('a') : null;
+      if (a && a.href && /^https?:\/\//i.test(a.href) && !a.href.includes('notebooklm.google.com')) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+      }
+    };
+    window.addEventListener('click', preventAllNavigation, true);
+
+    const originalWindowOpen = window.open;
+    window.open = function () {
+      return null;
+    };
+
+    let banner = null;
+    try {
+      banner = document.createElement('div');
+      banner.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1e293b;color:#ffffff;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:0 10px 25px rgba(0,0,0,0.3);z-index:999999;display:flex;align-items:center;gap:10px;pointer-events:none;transition:all 0.2s ease;font-family:sans-serif;';
+      banner.innerHTML = `<span style="font-size:16px;">📦</span> <span>NotebookLM ソースを解析中...</span>`;
+      document.body.appendChild(banner);
+    } catch (_) {}
+
+    const updateBanner = (msg) => {
+      sendSourceProgress(msg);
+      if (banner) {
+        const span = banner.querySelector('span:last-child');
+        if (span) span.textContent = msg;
+      }
+    };
+
+    try {
+      let rpcItems = null;
+      try {
+        rpcItems = await fetchSourcesViaRpc();
+      } catch (rpcErr) {
+        console.warn('[AI2PDF] NotebookLM RPC extraction warning:', rpcErr);
+      }
+
+      if (rpcItems && rpcItems.length > 0) {
+        // RPCで全ソース一覧・本文・URL・ガイドを取得済み。画像URLが未取得の画像ソースのみビューアを開いて画像を取得
+        const missingImages = rpcItems.filter((it) => it.type === 'image' && !it.imageUrl && !it.fileDataUrl);
+        if (missingImages.length > 0) {
+          await expandCollapsedFolders();
+          for (let j = 0; j < missingImages.length; j++) {
+            const imgItem = missingImages[j];
+            updateBanner(`画像ソースの実体を取得中 (${j + 1}/${missingImages.length}): ${imgItem.title.substring(0, 20)}`);
+            try {
+              const clicked = await openSourceRow(imgItem);
+              if (clicked) {
+                const startT = Date.now();
+                while (Date.now() - startT < 2600) {
+                  await new Promise((r) => setTimeout(r, 100));
+                  const view = await extractActiveSourceView(imgItem.title);
+                  if (view && (view.imageUrl || view.fileDataUrl)) {
+                    imgItem.imageUrl = view.imageUrl;
+                    imgItem.fallbackImageUrl = view.fallbackImageUrl;
+                    imgItem.fileDataUrl = view.fileDataUrl;
+                    imgItem.fileType = view.fileType;
+                    if (!imgItem.text && view.text) imgItem.text = view.text;
+                    if (!imgItem.guide && view.guide) imgItem.guide = view.guide;
+                    break;
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('[AI2PDF] Missing image viewer warning:', imgItem.title, e);
+            }
+          }
+          await returnToSourceList();
+        }
+
+        for (const item of rpcItems) {
+          sources.push({
+            id: `src-${sources.length + 1}`,
+            index: sources.length + 1,
+            title: item.title,
+            type: item.type,
+            url: item.url || '',
+            imageUrl: item.imageUrl || '',
+            fallbackImageUrl: item.fallbackImageUrl || '',
+            fileDataUrl: item.fileDataUrl || '',
+            fileType: item.fileType || (item.type === 'image' ? 'image/jpeg' : (item.type === 'pdf' ? 'application/pdf' : '')),
+            guide: item.guide || '',
+            summary: item.guide || (item.type === 'image' ? '画像ソース' : (item.type === 'pdf' ? 'PDFソース' : 'Gemini Notebook 登録ソース')),
+            text: item.text || '',
+            isSelected: true,
+            citations: []
+          });
+          seenTitles.add(item.title);
+        }
+      } else {
+        // RPCが使用できない環境向けのShadow-DOM対応UIクリックフォールバック
+        updateBanner('NotebookLM ソース一覧をスキャン中…');
+        const sidebarItems = await getNotebookSidebarItems();
+
+        for (let i = 0; i < sidebarItems.length; i++) {
+          const item = sidebarItems[i];
+          let detailData = null;
+
+          updateBanner(`ソースを取得中 (${i + 1}/${sidebarItems.length}): ${(item.title || 'ソース').substring(0, 18)}`);
+
+          try {
+            const clicked = await openSourceRow(item);
+            if (clicked) {
+              const maxWait = item.type === 'image' ? 2400 : 1500;
+              const startT = Date.now();
+              while (Date.now() - startT < maxWait) {
+                await new Promise((r) => setTimeout(r, 90));
+                const view = await extractActiveSourceView(item.title);
+                if (view) {
+                  detailData = view;
+                  if (item.type === 'image') {
+                    if (view.imageUrl || view.fileDataUrl) break;
+                  } else if (
+                    (view.text && view.text.length > 20) ||
+                    (view.url && Date.now() - startT > 350) ||
+                    (Date.now() - startT > 900 && (view.guide || view.text))
+                  ) {
+                    break;
+                  }
+                }
+              }
+            }
+          } catch (itemErr) {
+            console.warn('[AI2PDF] Item extract warning:', item.title, itemErr);
+          }
+
+          const finalTitle = item.title;
+          let finalType = item.type;
+          if (/\.(jpe?g|png|webp|gif|bmp|svg|tiff|heic)$/i.test(finalTitle) || finalTitle.toLowerCase().startsWith('image1000')) {
+            finalType = 'image';
+          } else if (finalTitle.toLowerCase().endsWith('.pdf')) {
+            finalType = 'pdf';
+          }
+
+          const finalUrl = unwrapGoogleRedirectUrl((detailData && detailData.url) ? detailData.url : item.directUrl);
+          const finalGuide = (detailData && detailData.guide) ? detailData.guide : '';
+          const finalText = (detailData && detailData.text) ? detailData.text : '';
+          const finalImageUrl = (detailData && detailData.imageUrl) ? detailData.imageUrl : '';
+          const finalFallbackImageUrl = (detailData && detailData.fallbackImageUrl) ? detailData.fallbackImageUrl : '';
+          const finalFileDataUrl = (detailData && detailData.fileDataUrl) ? detailData.fileDataUrl : '';
+
+          sources.push({
+            id: `src-${sources.length + 1}`,
+            index: sources.length + 1,
+            title: finalTitle,
+            type: finalType,
+            url: finalUrl,
+            imageUrl: finalImageUrl,
+            fallbackImageUrl: finalFallbackImageUrl,
+            fileDataUrl: finalFileDataUrl,
+            fileType: finalType === 'image' ? ((detailData && detailData.fileType) || 'image/jpeg') : (finalType === 'pdf' ? 'application/pdf' : ''),
+            guide: finalGuide,
+            summary: finalGuide || (finalType === 'image' ? '画像ソース' : (finalType === 'pdf' ? 'PDFソース' : 'Gemini Notebook 登録ソース')),
+            text: finalText,
+            isSelected: true,
+            citations: []
+          });
+          seenTitles.add(finalTitle);
+        }
+
+        await returnToSourceList();
+      }
+    } finally {
+      if (banner && banner.parentNode) {
+        try { banner.parentNode.removeChild(banner); } catch (_) {}
+      }
+      window.removeEventListener('click', preventAllNavigation, true);
+      window.open = originalWindowOpen;
+    }
+
+    // 3. スタジオ / 保存済みメモ (Notes) DOM補完収集
+    const noteCardSelectors = [
+      '[class*="note-card"]',
+      '[class*="studio-note"]',
+      '[class*="saved-note"]',
+      '[class*="note-item"]',
+      '[data-note-id]'
+    ];
+    const noteElements = querySelectorAllDeep(noteCardSelectors.join(', '));
+    for (const nel of noteElements) {
+      const nTitleEl = nel.querySelector('[class*="note-title"], h3, h4, [class*="title"]');
+      const nTitle = nTitleEl ? nTitleEl.textContent.trim() : 'ノートメモ';
+      if (seenTitles.has(nTitle)) continue;
+      seenTitles.add(nTitle);
+
+      const nBodyEl = nel.querySelector('[class*="note-content"], [class*="content"], [class*="text"], p') || nel;
+      const nText = (nBodyEl.innerText || nBodyEl.textContent || '').trim();
+
+      sources.push({
+        id: `note-${sources.length + 1}`,
+        index: sources.length + 1,
+        title: nTitle,
+        type: 'note',
+        url: '',
+        guide: 'NotebookLM メモ / ノート',
+        summary: 'NotebookLM メモ / ノート',
+        text: nText,
+        isSelected: true,
+        citations: []
+      });
+    }
+
+    // 4. チャットメッセージ内の引用バッジ (Citations) の関連付け
+    const citationBtns = querySelectorAllDeep(
+      'button[class*="citation"], [class*="citation-chip"], [class*="citation-pill"], [class*="citation-marker"], [class*="source-citation"], [data-source-id], [data-source-index], sup button'
+    );
+    citationBtns.forEach((cbtn) => {
+      const cnum = (cbtn.textContent || '').trim().replace(/[\[\]]/g, '');
+      const idx = parseInt(cnum, 10);
+      const label = cbtn.getAttribute('aria-label') || cbtn.getAttribute('title') || '';
+      const quote = label || cbtn.getAttribute('data-quote') || '';
+
+      if (!isNaN(idx) && idx > 0) {
+        let matched = sources.find((s) => s.index === idx);
+        if (!matched && idx <= sources.length) {
+          matched = sources[idx - 1];
+        }
+        if (matched && quote && !matched.citations.includes(quote)) {
+          matched.citations.push(quote);
+        }
+      }
+    });
+
+    return sources;
+  }
+
+  // ---------------------------------------------------------------
+  // メッセージハンドラ (二重登録防止)
+  // ---------------------------------------------------------------
+  if (!window.__ai2pdfListenerAttached) {
+    window.__ai2pdfListenerAttached = true;
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (!msg) return false;
+
+      if (msg.type === 'AI2PDF_PING_TAB') {
+        sendResponse({ ok: true });
+        return false;
+      }
+
+      if (msg.type !== 'AI2PDF_EXTRACT') return false;
+
+      (async () => {
+        const cfg = detectSite();
+        if (!cfg) {
+          sendResponse({ ok: false, error: 'UNSUPPORTED_SITE' });
           return;
         }
-        sendResponse({
-          ok: true,
-          data: {
-            site: cfg.id,
-            siteName: cfg.name,
-            title: getConversationTitle(cfg),
-            url: location.href,
-            exportedAt: new Date().toISOString(),
-            messages
+        try {
+          const messages = await collectConversation(cfg, (count) => {
+            try {
+              chrome.runtime.sendMessage({ type: 'AI2PDF_PROGRESS', count });
+            } catch (_) { /* noop */ }
+          });
+          if (!messages.length) {
+            sendResponse({ ok: false, error: 'NO_MESSAGES' });
+            return;
           }
-        });
-      } catch (e) {
-        sendResponse({ ok: false, error: 'EXTRACT_FAILED', detail: String(e && e.message || e) });
-      }
-    })();
 
-    return true; // 非同期応答
-  });
+          let sources = [];
+          if (cfg.id === 'gemini-notebook') {
+            try {
+              sources = await extractGeminiNotebookSources();
+            } catch (srcErr) {
+              console.warn('[AI2PDF] Source extraction warning:', srcErr);
+            }
+          }
+
+          sendResponse({
+            ok: true,
+            data: {
+              site: cfg.id,
+              siteName: cfg.name,
+              title: getConversationTitle(cfg),
+              url: location.href,
+              exportedAt: new Date().toISOString(),
+              messages,
+              sources
+            }
+          });
+        } catch (e) {
+          sendResponse({ ok: false, error: 'EXTRACT_FAILED', detail: String(e && e.message || e) });
+        }
+      })();
+
+      return true; // 非同期応答
+    });
+  }
 })();
