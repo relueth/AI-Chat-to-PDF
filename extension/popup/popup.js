@@ -16,7 +16,8 @@
     grok:              { name: 'Grok',            className: 'grok' },
     sakana:            { name: 'Sakana AI',       className: 'sakana' },
     deepseek:          { name: 'DeepSeek',        className: 'deepseek' },
-    'meta-ai':         { name: 'Meta AI',         className: 'meta-ai' }
+    'meta-ai':         { name: 'Meta AI',         className: 'meta-ai' },
+    qwen:              { name: 'Qwen',            className: 'qwen' }
   };
 
   const btn = document.getElementById('btn-export');
@@ -94,6 +95,10 @@
       const p = u.pathname;
       if (h === 'chat.deepseek.com' || h.endsWith('.deepseek.com') || h === 'deepseek.com') return true;
       if (h === 'meta.ai' || h.endsWith('.meta.ai') || h === 'www.meta.ai') return true;
+      if (h === 'chat.qwen.ai' || h.endsWith('.qwen.ai') || h === 'qwen.ai' ||
+          h === 'chat.qwenlm.ai' || h.endsWith('.qwenlm.ai') || h === 'qwenlm.ai' ||
+          h === 'qianwen.com' || h.endsWith('.qianwen.com') ||
+          h === 'tongyi.aliyun.com' || h === 'qianwen.aliyun.com') return true;
       if (h === 'grok.com' || h.endsWith('.grok.com')) return true;
       if ((h === 'x.com' || h.endsWith('.x.com') || h === 'twitter.com' || h.endsWith('.twitter.com')) &&
           (p.startsWith('/i/grok') || p.startsWith('/grok'))) return true;
@@ -128,6 +133,10 @@
       const p = u.pathname;
       if (h.includes('deepseek')) return 'deepseek';
       if (h.includes('meta.ai')) return 'meta-ai';
+      if (h === 'qwen.ai' || h.endsWith('.qwen.ai') ||
+          h === 'qwenlm.ai' || h.endsWith('.qwenlm.ai') ||
+          h === 'qianwen.com' || h.endsWith('.qianwen.com') ||
+          h === 'tongyi.aliyun.com' || h === 'qianwen.aliyun.com') return 'qwen';
       if (h.includes('grok.com') ||
           ((h.includes('x.com') || h.includes('twitter.com')) && (p.startsWith('/i/grok') || p.startsWith('/grok')))) {
         return 'grok';
@@ -158,7 +167,7 @@
     if (!tab || !isSupportedUrl(tab.url || '')) {
       badge.textContent = '非対応ページ';
       badge.classList.add('unsupported');
-      setStatus('Kimi / Gemini / NotebookLM / Claude / Genspark / ChatGPT / Grok / Sakana AI / DeepSeek / Meta AI の会話ページで開いてください。');
+      setStatus('Kimi / Gemini / NotebookLM / Claude / Genspark / ChatGPT / Grok / Sakana AI / DeepSeek / Meta AI / Qwen の会話ページで開いてください。');
       btn.disabled = true;
       return;
     }

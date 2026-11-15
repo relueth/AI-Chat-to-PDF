@@ -47,6 +47,7 @@ body {
 .site-badge.sakana   { background: #ccfbf1; color: #0f766e; }
 .site-badge.deepseek { background: #dbeafe; color: #1e40af; }
 .site-badge.meta-ai  { background: #ede9fe; color: #4338ca; }
+.site-badge.qwen     { background: #eef2ff; color: #5b21b6; }
 .site-badge.unsupported { background: #fee2e2; color: #b91c1c; }
 
 .status-text { font-size: 12px; color: #4b5563; line-height: 1.5; }

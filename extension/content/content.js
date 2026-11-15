@@ -832,6 +832,136 @@
         'h1',
         'title'
       ]
+    },
+    {
+      id: 'qwen',
+      name: 'Qwen',
+      hosts: [
+        'chat.qwen.ai',
+        'qwen.ai',
+        'www.qwen.ai',
+        'chat.qwenlm.ai',
+        'qwenlm.ai',
+        'www.qianwen.com',
+        'qianwen.com',
+        'tongyi.aliyun.com',
+        'qianwen.aliyun.com'
+      ],
+      itemSelectors: [
+        '.qwen-chat-message',
+        '[class*="qwen-chat-message"]',
+        '.user-message',
+        '.response-message',
+        '[class*="user-message"]',
+        '[class*="response-message"]',
+        '[class*="assistant-message"]',
+        '[class*="chat-message"]',
+        '[class*="message-item"]',
+        '[class*="message-row"]',
+        '[class*="chat-turn"]',
+        '[class*="conversation-turn"]',
+        '[data-role="user"]',
+        '[data-role="assistant"]',
+        '[data-message-author-role="user"]',
+        '[data-message-author-role="assistant"]',
+        '[data-testid*="user"]',
+        '[data-testid*="assistant"]',
+        'div[class*="questionItem"]',
+        'div[class*="answerItem"]',
+        '#messages-container > div'
+      ],
+      userMatch: [
+        '[data-role="user"]',
+        '[data-message-role="user"]',
+        '[data-message-author-role="user"]',
+        '[data-author="user"]',
+        '[data-testid*="user"]',
+        '.user-message',
+        '[class*="user-message"]',
+        '[class*="message-user"]',
+        '[class*="chat-user"]',
+        '[class*="from-user"]',
+        '[class*="is-user"]',
+        '[class*="questionItem"]',
+        '[class*="bubble-user"]',
+        '[class*="justify-end"]',
+        '[class*="items-end"]',
+        '[class*="self-end"]',
+        '[class*="ml-auto"]'
+      ],
+      assistantMatch: [
+        '[data-role="assistant"]',
+        '[data-role="model"]',
+        '[data-message-role="assistant"]',
+        '[data-message-author-role="assistant"]',
+        '[data-author="assistant"]',
+        '[data-testid*="assistant"]',
+        '[data-testid*="bot"]',
+        '.response-message',
+        '[class*="response-message"]',
+        '[class*="assistant-message"]',
+        '[class*="message-assistant"]',
+        '[class*="chat-assistant"]',
+        '[class*="ai-message"]',
+        '[class*="bot-message"]',
+        '[class*="from-ai"]',
+        '[class*="is-ai"]',
+        '[class*="answerItem"]',
+        '[class*="qwen-markdown"]',
+        '.markdown-prose',
+        '.markdown-body',
+        '.markdown',
+        '[class*="markdown"]',
+        '.prose',
+        '[class*="prose"]'
+      ],
+      userContentSelectors: [
+        '[class*="user-message-content"]',
+        '[class*="user-content"]',
+        '[class*="query-text"]',
+        '[class*="query-content"]',
+        '[class*="prompt-text"]',
+        'div.rounded-3xl',
+        '[class*="bubble"]',
+        '[class*="message-content"]',
+        'p',
+        'span'
+      ],
+      assistantContentSelectors: [
+        '[class*="response-message-body"]',
+        '[class*="response-message-content"]',
+        '[class*="qwen-markdown"]',
+        '.markdown-prose',
+        '.markdown-body',
+        '.markdown',
+        '[class*="markdown"]',
+        '.prose',
+        '[class*="prose"]',
+        '[class*="message-content"]',
+        '[class*="response-content"]',
+        '[class*="answer-content"]'
+      ],
+      contentSelectors: [
+        '[class*="response-message-body"]',
+        '[class*="qwen-markdown"]',
+        '.markdown-prose',
+        '.markdown-body',
+        '.markdown',
+        '[class*="markdown"]',
+        '.prose',
+        '[class*="prose"]',
+        '[class*="message-content"]'
+      ],
+      titleSelectors: [
+        '.chat-item-title-text',
+        '[class*="chat-item"][class*="active"]',
+        '[class*="chat-title"]',
+        '[class*="conversation-title"]',
+        '[class*="session-title"]',
+        'header h1',
+        'h1',
+        'title'
+      ]
     }
   ];
 
@@ -2074,7 +2204,7 @@
         const el = document.querySelector(sel);
         if (!el) continue;
         const text = (el.value || el.textContent || '').trim();
-        if (text && text.length > 1 && text.length < 500 && !/^(Genspark|AI Chat|ChatGPT|Gemini|Claude|Kimi|Grok|xAI)$/i.test(text)) {
+        if (text && text.length > 1 && text.length < 500 && !/^(Genspark|AI Chat|ChatGPT|Gemini|Claude|Kimi|Grok|xAI|Qwen|Qwen Chat|通义千问|千问|DeepSeek|Meta AI|Sakana AI)$/i.test(text)) {
           return text;
         }
       } catch (_) { continue; }
@@ -2449,8 +2579,8 @@
     }
     const t = (document.title || '').trim();
     // "Kimi - 〜" や "〜 | Genspark" のようなサイト名プレフィックス・サフィックスを除去
-    return t.replace(/\s*[-|–]\s*(Kimi|Gemini|Gemini Notebook|NotebookLM|Claude|Google Gemini|Genspark|Genspark AI|ChatGPT|Grok|xAI)\s*$/i, '')
-            .replace(/^(Genspark|Genspark AI|Grok|xAI|Kimi|Gemini Notebook|NotebookLM)\s*[-|–]\s*/i, '') || t || 'AI会話';
+    return t.replace(/\s*[-|–]\s*(Kimi|Gemini|Gemini Notebook|NotebookLM|Claude|Google Gemini|Genspark|Genspark AI|ChatGPT|Grok|xAI|Qwen|Qwen Chat|通义千问|千问|DeepSeek|Meta AI|Sakana AI)\s*$/i, '')
+            .replace(/^(Genspark|Genspark AI|Grok|xAI|Kimi|Gemini Notebook|NotebookLM|Qwen|Qwen Chat|通义千问|千问|DeepSeek|Meta AI|Sakana AI)\s*[-|–]\s*/i, '') || t || 'AI会話';
   }
 
   // ---------------------------------------------------------------

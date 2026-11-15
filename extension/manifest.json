@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI Chat to PDF (Kimi / Gemini / Claude / ChatGPT / Grok / DeepSeek / Meta AI)",
+  "name": "AI Chat to PDF (Kimi / Gemini / Claude / ChatGPT / Grok / DeepSeek / Meta AI / Qwen)",
   "version": "1.0.0",
-  "description": "Kimi / Gemini / Gemini Notebook (NotebookLM) / Claude / ChatGPT / Genspark / Grok / Sakana AI / DeepSeek / Meta AI のAI会話を、数式のレイアウトを崩さずにPDFとして保存します。",
+  "description": "Kimi / Gemini / Gemini Notebook (NotebookLM) / Claude / ChatGPT / Genspark / Grok / Sakana AI / DeepSeek / Meta AI / Qwen のAI会話を、数式のレイアウトを崩さずにPDFとして保存します。",
   "default_locale": "ja",
   "action": {
     "default_popup": "popup/popup.html",
@@ -59,7 +59,17 @@
         "https://deepseek.com/*",
         "https://www.meta.ai/*",
         "https://meta.ai/*",
-        "https://*.meta.ai/*"
+        "https://*.meta.ai/*",
+        "https://chat.qwen.ai/*",
+        "https://*.qwen.ai/*",
+        "https://qwen.ai/*",
+        "https://chat.qwenlm.ai/*",
+        "https://*.qwenlm.ai/*",
+        "https://www.qianwen.com/*",
+        "https://qianwen.com/*",
+        "https://*.qianwen.com/*",
+        "https://tongyi.aliyun.com/*",
+        "https://qianwen.aliyun.com/*"
       ],
       "js": ["content/content.js"],
       "run_at": "document_idle"
